@@ -1,0 +1,21 @@
+SET(MOUDLE libvnc-cpp)
+
+find_package(Boost REQUIRED COMPONENTS asio)
+find_package(spdlog CONFIG REQUIRED)
+
+file(GLOB_RECURSE MOUDLE_SOURCE_FILES  ${LIBVNC_CPP_SRC_DIR}/*.h ${LIBVNC_CPP_SRC_DIR}/*.c ${LIBVNC_CPP_SRC_DIR}/*.cxx ${LIBVNC_CPP_SRC_DIR}/*.cpp ${LIBVNC_CPP_SRC_DIR}/*.hpp)
+source_group(TREE ${LIBVNC_CPP_SRC_DIR} PREFIX "src" FILES ${MOUDLE_SOURCE_FILES})
+
+
+file(GLOB_RECURSE MOUDLE_HEADER_FILES "${LIBVNC_CPP_INCLUDE_DIR}/*.h" "${LIBVNC_CPP_INCLUDE_DIR}/*.hpp" "${LIBVNC_CPP_INCLUDE_DIR}/*.inl")
+source_group(TREE ${LIBVNC_CPP_INCLUDE_DIR} PREFIX "include" FILES ${MOUDLE_HEADER_FILES})
+
+add_library(${MOUDLE} ${MOUDLE_SOURCE_FILES} ${MOUDLE_HEADER_FILES})
+
+target_link_libraries(${MOUDLE} PUBLIC Boost::asio spdlog::spdlog)
+
+target_include_directories(${MOUDLE}
+    PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LIBVNC_CPP_INCLUDE_DIR}
+)
