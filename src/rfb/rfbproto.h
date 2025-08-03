@@ -287,35 +287,6 @@ typedef char rfbProtocolVersionMsg[13];	/* allow extra byte for null */
  reserved:                    0xFF
 */
 
-#define rfbConnFailed 0
-#define rfbInvalidAuth 0
-#define rfbNoAuth 1
-#define rfbVncAuth 2
-#define rfbRSAAES 5
-#define rfbRSAAESne 6
-#define rfbRSAAES_256 129
-#define rfbRSAAESne_256 130
-#define rfbUltraVNC 17
-// adzm 2010-09 - After rfbUltraVNC, auth repeats via rfbVncAuthContinue
-#define rfbVeNCypt 19
-
-#define rfbUltraVNC_SCPrompt 0x68
-#define rfbUltraVNC_SessionSelect 0x69
-// adzm 2010-09 - Ultra subtypes
-#define rfbUltraVNC_MsLogonIAuth 0x70
-
-	// MS-Logon I never seems to be used anymore -- the old code would say if (m_ms_logon) AuthMsLogon (II) else AuthVnc
-	// and within AuthVnc would be if (m_ms_logon) { /* MS-Logon code */ }. That could never be hit since the first case
-	// would always match!
-
-#define rfbUltraVNC_MsLogonIIAuth 0x71
-//Handshake needed to change for a possible security leak
-//Only new viewers can connect
-#define rfbUltraVNC_SecureVNCPluginAuth 0x72
-#define rfbUltraVNC_SecureVNCPluginAuth_new 0x73
-#define rfbClientInitExtraMsgSupport 0x74
-#define rfbClientInitExtraMsgSupportNew 0x75
-
 //adzm 2010-05-10 - for backwards compatibility with pre-3.8
 #define rfbLegacy_SecureVNCPlugin 17
 #define rfbLegacy_MsLogon 0xfffffffa // UltraVNC MS-Logon with (hopefully) better security
@@ -345,14 +316,6 @@ typedef char rfbProtocolVersionMsg[13];	/* allow extra byte for null */
  *			the client.
  */
 
-#define rfbVncAuthOK 0
-#define rfbVncAuthFailed 1
-// neither of these are used any longer in RFB 3.8
-#define rfbVncAuthTooMany 2
-#define rfbVncAuthFailedEx 3 //adzm 2010-05-11 - Send an explanatory message for the failure (if any)
-
-// adzm 2010-09 - rfbUltraVNC or other auths may send this to restart authentication (perhaps over a now-secure channel)
-#define rfbVncAuthContinue 0xFFFFFFFF
 
 
 /*-----------------------------------------------------------------------------
@@ -428,151 +391,7 @@ typedef struct {
 
 /* server -> client */
 
-#define rfbFramebufferUpdate 0
-#define rfbSetColourMapEntries 1
-#define rfbBell 2
-#define rfbServerCutText 3
-#define rfbResizeFrameBuffer 4 // Modif sf@2002 
-#define rfbPalmVNCReSizeFrameBuffer 0xF
-#define rfbServerState 0xAD // 26 March 2008 jdp
-
-
 /* client -> server */
-
-#define rfbSetPixelFormat 0
-#define rfbFixColourMapEntries 1 /* not currently supported */
-#define rfbSetEncodings 2
-#define rfbFramebufferUpdateRequest 3
-#define rfbKeyEvent 4
-#define rfbPointerEvent 5
-#define rfbClientCutText 6
-#define rfbFileTransfer 7 // Modif sf@2002 - actually bidirectionnal
-#define rfbSetScale 8 // Modif sf@2002
-#define rfbSetServerInput 9 // Modif rdv@2002
-#define rfbSetSW 10 // Modif rdv@2002
-#define rfbTextChat 11 // Modif sf@2002 - Text Chat - Bidirectionnal
-#define rfbKeepAlive 13 // 16 July 2008 jdp -- bidirectional
-#define rfbPalmVNCSetScaleFactor 0xF // PalmVNC 1.4 & 2.0 SetScale Factor message
-// adzm 2010-09 - Notify streaming DSM plugin support
-#define rfbNotifyPluginStreaming 0x50
-
-#define rfbRequestSession 20
-#define rfbSetSession 21
-#define rfbSetDesktopSize 251
-#define rfbMonitorInfo 252
-#define rfbSetMonitor 254
-
-
-
-/*****************************************************************************
- *
- * Encoding types
- *
- *****************************************************************************/
-
-#define rfbEncodingRaw 0
-#define rfbEncodingCopyRect 1
-#define rfbEncodingRRE 2
-#define rfbEncodingCoRRE 4
-#define rfbEncodingHextile 5
-#define rfbEncodingZlib    6
-#define rfbEncodingTight   7
-#define rfbEncodingZlibHex 8
-#define rfbEncodingUltra	9
-#define rfbEncodingUltra2	10
-#define rfbEncodingZRLE 16
-// nyama/2006/08/02:new YUV-Wavlet lossy codec based on ZRLE
-#define rfbEncodingZYWRLE 17
-#ifdef _XZ
-#define rfbEncodingXZ 18
-#define rfbEncodingXZYW 19
-#endif
-#define rfbEncodingZstd    25
-#define rfbEncodingTightZstd   26
-#define rfbEncodingZstdHex 27
-#define rfbEncodingZSTDRLE 28
-#define rfbEncodingZSTDYWRLE 29
-
-
-// Cache & XOR-Zlib - rdv@2002
-#define rfbEncodingCache					0xFFFF0000
-#define rfbEncodingCacheEnable				0xFFFF0001
-//#define rfbEncodingXOR_Zlib					0xFFFF0002
-//#define rfbEncodingXORMonoColor_Zlib		0xFFFF0003
-//#define rfbEncodingXORMultiColor_Zlib		0xFFFF0004
-//#define rfbEncodingSolidColor				0xFFFF0005
-//#define rfbEncodingXOREnable				0xFFFF0006
-#define rfbEncodingCacheZip					0xFFFF0007
-#define rfbEncodingQueueZip					0xFFFF0008
-#define rfbEncodingUltraZip					0xFFFF0009
-#define rfbEncodingQueueZstd				0xFFFF000A
-#define rfbEncodingQueueEnable				0xFFFF000B
-
-// viewer requests server state updates
-#define rfbEncodingServerState              0xFFFF8000
-#define rfbEncodingEnableKeepAlive          0xFFFF8001
-#define rfbEncodingFTProtocolVersion    	0xFFFF8002
-#define rfbEncodingpseudoSession    		0xFFFF8003
-#define rfbEncodingEnableIdleTime           0xFFFF8004
-#define rfbEncodingMonitorInfo              0xFFFF8005
-
-// Same encoder number as in tight 
-/*
-#define rfbEncodingXCursor         0xFFFFFF10
-#define rfbEncodingRichCursor      0xFFFFFF11
-#define rfbEncodingNewFBSize       0xFFFFFF21
-*/
-
-/*
- *  Tight Special encoding numbers:
- *   0xFFFFFD00 .. 0xFFFFFD05 -- subsampling level;
- *   0xFFFFFE00 .. 0xFFFFFE64 -- fine-grained quality level (0-100 scale);
- *   0xFFFFFF00 .. 0xFFFFFF0F -- encoding-specific compression levels;
- *   0xFFFFFF10 .. 0xFFFFFF1F -- mouse cursor shape data;
- *   0xFFFFFF20 .. 0xFFFFFF2F -- various protocol extensions;
- *   0xFFFFFF30 .. 0xFFFFFFDF -- not allocated yet;
- *   0xFFFFFFE0 .. 0xFFFFFFEF -- quality level for JPEG compressor;
- *   0xFFFFFFF0 .. 0xFFFFFFFF -- cross-encoding compression levels.
- */
-
-#define rfbEncodingFineQualityLevel0   0xFFFFFE00
-#define rfbEncodingFineQualityLevel100 0xFFFFFE64
-#define rfbEncodingSubsamp1X           0xFFFFFD00
-#define rfbEncodingSubsamp4X           0xFFFFFD01
-#define rfbEncodingSubsamp2X           0xFFFFFD02
-#define rfbEncodingSubsampGray         0xFFFFFD03
-#define rfbEncodingSubsamp8X           0xFFFFFD04
-#define rfbEncodingSubsamp16X          0xFFFFFD05
-
-#define rfbEncodingCompressLevel0  0xFFFFFF00
-#define rfbEncodingCompressLevel1  0xFFFFFF01
-#define rfbEncodingCompressLevel2  0xFFFFFF02
-#define rfbEncodingCompressLevel3  0xFFFFFF03
-#define rfbEncodingCompressLevel4  0xFFFFFF04
-#define rfbEncodingCompressLevel5  0xFFFFFF05
-#define rfbEncodingCompressLevel6  0xFFFFFF06
-#define rfbEncodingCompressLevel7  0xFFFFFF07
-#define rfbEncodingCompressLevel8  0xFFFFFF08
-#define rfbEncodingCompressLevel9  0xFFFFFF09
-
-#define rfbEncodingXCursor         0xFFFFFF10
-#define rfbEncodingRichCursor      0xFFFFFF11
-#define rfbEncodingPointerPos      0xFFFFFF18
-#define rfbEncodingLastRect        0xFFFFFF20
-#define rfbEncodingNewFBSize       0xFFFFFF21
-#define rfbEncodingExtDesktopSize  0xFFFFFECC
-#define rfbEncodingExtViewSize     0xFFFFFECD
- 
-#define rfbEncodingQualityLevel0   0xFFFFFFE0
-#define rfbEncodingQualityLevel1   0xFFFFFFE1
-#define rfbEncodingQualityLevel2   0xFFFFFFE2
-#define rfbEncodingQualityLevel3   0xFFFFFFE3
-#define rfbEncodingQualityLevel4   0xFFFFFFE4
-#define rfbEncodingQualityLevel5   0xFFFFFFE5
-#define rfbEncodingQualityLevel6   0xFFFFFFE6
-#define rfbEncodingQualityLevel7   0xFFFFFFE7
-#define rfbEncodingQualityLevel8   0xFFFFFFE8
-#define rfbEncodingQualityLevel9   0xFFFFFFE9
 
 /*
  *  XZ Special encoding numbers (future possibilities)
@@ -581,10 +400,7 @@ typedef struct {
  *   0x585A0000 .. 0x585AFFFF -- XZ encoding-specific parameters;
 */
 
-// adzm - 2010-07 - Extended clipboard support
-#define rfbEncodingExtendedClipboard  0xC0A1E5CE
-  // adzm 2010-09 - Notify streaming DSM plugin support
-#define rfbEncodingPluginStreaming       0xC0A1E5CF
+
 
 
 /*****************************************************************************
