@@ -7,7 +7,9 @@
 int main()
 {
     boost::asio::io_context ioc;
-    libvnc::client cli(ioc, "100.64.0.15");
+
+    libvnc::proto::rfbPixelFormat format(8, 3, 4);
+    libvnc::client cli(ioc, format, "127.0.0.1");
     cli.start();
     return ioc.run();
 }

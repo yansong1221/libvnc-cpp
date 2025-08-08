@@ -169,9 +169,7 @@ typedef struct {
  * The format string below can be used in sprintf or sscanf to generate or
  * decode the version string respectively.
  */
-#define rfbProtocolVersionFormat "RFB %03d.%03d\n"
-#define rfbProtocolMajorVersion 3
-#define rfbProtocolMinorVersion 8
+
 //#define rfbProtocolMinorVersion 4 // Reserved to UltraVNC ! (as well as "6")
 
 //adzm 2010-09
@@ -218,9 +216,7 @@ typedef struct {
    Since the basic VNC functionality remains, I think that is acceptable.
 */
 
-typedef char rfbProtocolVersionMsg[13];	/* allow extra byte for null */
 
-#define sz_rfbProtocolVersionMsg 12
 
 
 /*-----------------------------------------------------------------------------
