@@ -5,11 +5,12 @@
 
 namespace libvnc::encoding {
 
-class raw : public codec
+class raw : public frame_codec
 {
 public:
     void reset() override { buffer_.consume(buffer_.size()); }
-    proto::rfbEncoding encoding() const override { return proto::rfbEncoding::rfbEncodingRaw; }
+    std::string codec_name() const override { return "raw"; }
+    proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRaw; }
 
     boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
                                         const proto::rfbRectangle& rect,

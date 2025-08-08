@@ -14,6 +14,7 @@ public:
     using bell_handler_type       = std::function<void()>;
     using select_auth_scheme_handler_type =
         std::function<proto::rfbAuthScheme(const std::vector<proto::rfbAuthScheme>&)>;
+    using text_chat_handler_type = std::function<void(proto::rfbTextChatType, std::string_view)>;
 
 public:
     client(boost::asio::io_context& executor,
@@ -39,6 +40,7 @@ public:
     void set_disconnect_handler(disconnect_handler_type&& handler);
     void set_bell_handler(bell_handler_type&& handler);
     void set_select_auth_scheme_handler(select_auth_scheme_handler_type&& handler);
+    void set_text_chat_handler(text_chat_handler_type&& handler);
 
 private:
     friend class client_impl;

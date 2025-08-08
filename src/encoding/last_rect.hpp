@@ -8,7 +8,7 @@ class last_rect : public codec
 {
 public:
     void reset() override { }
-    proto::rfbEncoding encoding() const override { return proto::rfbEncoding::rfbEncodingLastRect; }
+    proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingLastRect; }
 
     boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
                                         const proto::rfbRectangle& rect,

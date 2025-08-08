@@ -70,7 +70,7 @@ protected:
 class x_cursor : public cursor
 {
 public:
-    proto::rfbEncoding encoding() const override { return proto::rfbEncoding::rfbEncodingXCursor; }
+    proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingXCursor; }
 
     boost::asio::awaitable<bool> read_rc_source(boost::asio::ip::tcp::socket& socket,
                                                 int width,
@@ -145,7 +145,7 @@ private:
 class rich_cursor : public cursor
 {
 public:
-    proto::rfbEncoding encoding() const override
+    proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingRichCursor;
     }

@@ -8,7 +8,7 @@ class new_fb_size : public codec
 {
 public:
     void reset() override { }
-    proto::rfbEncoding encoding() const override
+    proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingNewFBSize;
     }

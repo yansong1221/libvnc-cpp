@@ -29,10 +29,10 @@ public:
     void start();
 
     void set_format(const proto::rfbPixelFormat& format);
-    void set_encodings(const std::vector<proto::rfbEncoding>& encodings);
+    void set_encodings(const std::vector<std::string>& encodings);
 
     void send_framebuffer_update_request(int x, int y, int w, int h, bool incremental);
-    std::vector<proto::rfbEncoding> supported_encodings() const;
+    std::vector<std::string> supported_encodings() const;
 
     void send_pointer_event(int x, int y, int buttonMask);
     void send_key_event(uint32_t key, bool down);
@@ -75,6 +75,13 @@ public:
                                   select_auth_scheme_handler_ = std::move(handler);
                               });
     }
+    void set_text_chat_handler(client::text_chat_handler_type&& handler)
+    {
+        boost::asio::dispatch(executor_,
+                              [this, self = shared_from_this(), handler = std::move(handler)]() {
+                                  text_chat_handler_ = std::move(handler);
+                              });
+    }
 
 private:
     boost::asio::awaitable<void> async_authenticate();
@@ -99,6 +106,8 @@ private:
 
     template<typename T>
     void copy_rect_from_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y);
+
+    encoding::codec* find_encoding(const proto::rfbEncoding& encoding);
 
 protected:
     void got_bitmap(const uint8_t* buffer, int x, int y, int w, int h) override;
@@ -144,6 +153,7 @@ private:
     client::disconnect_handler_type disconnect_handler_;
     client::bell_handler_type bell_handler_;
     client::select_auth_scheme_handler_type select_auth_scheme_handler_;
+    client::text_chat_handler_type text_chat_handler_;
 
 
     supported_messages supported_messages_;
@@ -172,6 +182,7 @@ private:
 
     proto::rfbExtDesktopScreen screen_;
 
+    std::vector<std::unique_ptr<encoding::frame_codec>> frame_codecs_;
     std::vector<std::unique_ptr<encoding::codec>> codecs_;
 };
 } // namespace libvnc

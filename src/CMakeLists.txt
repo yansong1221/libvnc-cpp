@@ -1,6 +1,6 @@
 SET(MOUDLE libvnc-cpp)
 
-find_package(Boost REQUIRED COMPONENTS asio endian)
+find_package(Boost REQUIRED COMPONENTS asio endian iostreams)
 find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 
@@ -13,7 +13,7 @@ source_group(TREE ${LIBVNC_CPP_INCLUDE_DIR} PREFIX "include" FILES ${MOUDLE_HEAD
 
 add_library(${MOUDLE} ${MOUDLE_SOURCE_FILES} ${MOUDLE_HEADER_FILES})
 
-target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian
+target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian Boost::iostreams
  spdlog::spdlog   
  OpenSSL::SSL OpenSSL::Crypto)
 
@@ -22,3 +22,4 @@ target_include_directories(${MOUDLE}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${LIBVNC_CPP_INCLUDE_DIR}
 )
+target_compile_definitions(${MOUDLE} PRIVATE LIBVNC_HAVE_LIBZ)

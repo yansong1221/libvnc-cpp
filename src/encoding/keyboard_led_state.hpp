@@ -8,7 +8,7 @@ class keyboard_led_state : public codec
 {
 public:
     void reset() override { }
-    proto::rfbEncoding encoding() const override
+    proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingKeyboardLedState;
     }

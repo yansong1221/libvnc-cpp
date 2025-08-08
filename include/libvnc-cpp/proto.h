@@ -197,34 +197,42 @@ enum rfbVncAuthResult : uint32_t
     rfbVncAuthContinue = 0xFFFFFFFF
 };
 
+enum rfbTextChatType : int32_t
+{
+    rfbTextChatMessage  = 0,
+    rfbTextChatOpen     = -1,
+    rfbTextChatClose    = -2,
+    rfbTextChatFinished = -3,
+};
+
 struct rfbPixelFormat
 {
-    boost::endian::big_uint8_buf_t bitsPerPixel; /* 8,16,32 only */
+    boost::endian::big_uint8_buf_t bitsPerPixel = {}; /* 8,16,32 only */
 
-    boost::endian::big_uint8_buf_t depth; /* 8 to 32 */
+    boost::endian::big_uint8_buf_t depth = {}; /* 8 to 32 */
 
-    boost::endian::big_uint8_buf_t bigEndian; /* True if multi-byte pixels are interpreted
+    boost::endian::big_uint8_buf_t bigEndian = {}; /* True if multi-byte pixels are interpreted
                         as big endian, or if single-bit-per-pixel
                         has most significant bit of the byte
                         corresponding to first (leftmost) pixel. Of
                         course this is meaningless for 8-bit/pix */
 
-    boost::endian::big_uint8_buf_t trueColour; /* If false then we need a "colour map" to
+    boost::endian::big_uint8_buf_t trueColour = {}; /* If false then we need a "colour map" to
                          convert pixels to RGB. If true, xxxMax and
                          xxxShift specify bits used for red, green
                          and blue */
 
     /* the following fields are only meaningful if trueColour is true */
 
-    boost::endian::big_uint16_buf_t redMax; /* maximum red value (= 2^n - 1 where n is the
+    boost::endian::big_uint16_buf_t redMax = {}; /* maximum red value (= 2^n - 1 where n is the
                       number of bits used for red). Note this
                       value is always in big endian order. */
 
-    boost::endian::big_uint16_buf_t greenMax; /* similar for green */
+    boost::endian::big_uint16_buf_t greenMax = {}; /* similar for green */
 
-    boost::endian::big_uint16_buf_t blueMax; /* and blue */
+    boost::endian::big_uint16_buf_t blueMax = {}; /* and blue */
 
-    boost::endian::big_uint8_buf_t redShift; /* number of shifts needed to get the red
+    boost::endian::big_uint8_buf_t redShift = {}; /* number of shifts needed to get the red
                        value in a pixel to the least significant
                        bit. To find the red value from a given
                        pixel, do the following:
@@ -236,9 +244,9 @@ struct rfbPixelFormat
                        4) You now have the red value between 0 and
                           redMax. */
 
-    boost::endian::big_uint8_buf_t greenShift; /* similar for green */
+    boost::endian::big_uint8_buf_t greenShift = {}; /* similar for green */
 
-    boost::endian::big_uint8_buf_t blueShift; /* and blue */
+    boost::endian::big_uint8_buf_t blueShift = {}; /* and blue */
 
     boost::endian::big_uint8_buf_t pad1  = {};
     boost::endian::big_uint16_buf_t pad2 = {};
@@ -356,11 +364,25 @@ struct rfbSetEncodingsMsg
  * ServerCutText - the server has new text in its cut buffer.
  */
 
+enum rfbExtendedClipboard
+{
+    rfbExtendedClipboard_Text    = 1,
+    rfbExtendedClipboard_RTF     = 2,
+    rfbExtendedClipboard_HTML    = 4,
+    rfbExtendedClipboard_DIB     = 8,
+    rfbExtendedClipboard_Files   = 16,
+    rfbExtendedClipboard_Caps    = (1 << 24),
+    rfbExtendedClipboard_Request = (1 << 25),
+    rfbExtendedClipboard_Peek    = (1 << 26),
+    rfbExtendedClipboard_Notify  = (1 << 27),
+    rfbExtendedClipboard_Provide = (1 << 28),
+};
+
 struct rfbServerCutTextMsg
 {
     boost::endian::big_uint8_buf_t pad1;
     boost::endian::big_uint16_buf_t pad2;
-    boost::endian::big_uint32_buf_t length;
+    boost::endian::big_int32_buf_t length;
     /* followed by char text[length] */
 };
 
@@ -369,7 +391,7 @@ struct rfbTextChatMsg
 {
     boost::endian::big_uint8_buf_t pad1;  /*  Could be used later as an additionnal param */
     boost::endian::big_uint16_buf_t pad2; /*  Could be used later as text offset, for instance */
-    boost::endian::big_uint32_buf_t
+    boost::endian::big_int32_buf_t
         length; /*  Specific values for Open, close, finished (-1, -2, -3) */
     /* followed by char text[length] */
 };

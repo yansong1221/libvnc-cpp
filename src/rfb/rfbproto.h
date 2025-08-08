@@ -1019,9 +1019,6 @@ typedef struct _rfbTextChatMsg {
 #define sz_rfbTextChatMsg 8
 
 #define rfbTextMaxSize		4096
-#define rfbTextChatOpen		0xFFFFFFFF 
-#define rfbTextChatClose	0xFFFFFFFE  
-#define rfbTextChatFinished 0xFFFFFFFD 
 
 
 /*-----------------------------------------------------------------------------

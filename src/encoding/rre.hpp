@@ -5,11 +5,13 @@
 
 namespace libvnc::encoding {
 
-class rre : public codec
+class rre : public frame_codec
 {
 public:
     void reset() override { }
-    proto::rfbEncoding encoding() const override { return proto::rfbEncoding::rfbEncodingRRE; }
+    std::string codec_name() const override { return "rre"; }
+
+    proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRRE; }
 
     boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
                                         const proto::rfbRectangle& rect,
@@ -68,12 +70,12 @@ private:
 };
 
 
-class co_rre : public codec
+class co_rre : public frame_codec
 {
 public:
     void reset() override { buffer_.consume(buffer_.size()); }
-
-    proto::rfbEncoding encoding() const override { return proto::rfbEncoding::rfbEncodingCoRRE; }
+    std::string codec_name() const override { return "corre"; }
+    proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingCoRRE; }
 
     boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
                                         const proto::rfbRectangle& rect,

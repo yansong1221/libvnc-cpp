@@ -77,4 +77,9 @@ void client::set_select_auth_scheme_handler(select_auth_scheme_handler_type&& ha
     impl_->set_select_auth_scheme_handler(std::move(handler));
 }
 
+void client::set_text_chat_handler(text_chat_handler_type&& handler)
+{
+    impl_->set_text_chat_handler(std::move(handler));
+}
+
 } // namespace libvnc

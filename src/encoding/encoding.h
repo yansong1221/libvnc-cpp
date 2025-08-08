@@ -21,13 +21,22 @@ public:
 class codec
 {
 public:
-    virtual ~codec()                                          = default;
-    virtual void reset()                                      = 0;
-    virtual proto::rfbEncoding encoding() const               = 0;
+    virtual ~codec()                                                          = default;
+    virtual void reset()                                                      = 0;
+    virtual proto::rfbEncoding encoding_code() const                          = 0;
     virtual boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
                                                 const proto::rfbRectangle& rect,
                                                 const proto::rfbPixelFormat& format,
                                                 std::shared_ptr<frame_op> op) = 0;
+};
+
+class frame_codec : public codec
+{
+public:
+    virtual std::string codec_name() const = 0;
+    virtual bool requestLastRectEncoding() const { return false; }
+    virtual bool requestCompressLevel() const { return false; }
+    virtual bool requestQualityLevel() const { return false; }
 };
 
 } // namespace libvnc::encoding

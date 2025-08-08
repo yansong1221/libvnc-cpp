@@ -5,11 +5,13 @@
 
 namespace libvnc::encoding {
 
-class copy_rect : public codec
+class copy_rect : public frame_codec
 {
 public:
+    std::string codec_name() const override { return "copyrect"; }
+
     void reset() override { }
-    proto::rfbEncoding encoding() const override { return proto::rfbEncoding::rfbEncodingCopyRect; }
+    proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingCopyRect; }
 
     boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
                                         const proto::rfbRectangle& rect,

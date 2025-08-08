@@ -8,7 +8,7 @@ class pointer_pos : public codec
 {
 public:
     void reset() override { }
-    proto::rfbEncoding encoding() const override
+    proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingPointerPos;
     }
