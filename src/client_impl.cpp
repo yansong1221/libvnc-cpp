@@ -8,10 +8,12 @@
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/use_future.hpp>
 #include <boost/asio/write.hpp>
+#include <openssl/des.h> // DES 加密函数
 #include <openssl/dh.h>
 #include <openssl/evp.h>
 #include <openssl/md5.h>
 #include <openssl/rand.h>
+#include <openssl/rand.h> // 随机数生成（用于挑战值）
 #include <openssl/sha.h>
 #include <ranges>
 #include <spdlog/spdlog.h>
@@ -34,14 +36,10 @@
 #include "encoding/rre.hpp"
 
 #if defined(LIBVNC_HAVE_LIBZ)
-#include <boost/iostreams/copy.hpp>
-#include <boost/iostreams/device/array.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
-#include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/filtering_streambuf.hpp>
-#include <zlib.h>
+#include <zstr.hpp>
 #endif
 
+#include <filesystem>
 #include <iostream>
 #include <ranges>
 
@@ -67,21 +65,21 @@ static int encrypt_rfbdes(unsigned char* out,
     EVP_CIPHER_CTX* des = NULL;
     unsigned char mungedkey[8];
     int i;
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-    OSSL_PROVIDER* providerLegacy  = NULL;
-    OSSL_PROVIDER* providerDefault = NULL;
-#endif
+    // #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    //     OSSL_PROVIDER* providerLegacy  = NULL;
+    //     OSSL_PROVIDER* providerDefault = NULL;
+    // #endif
 
     for (i = 0; i < 8; i++)
         mungedkey[i] = reverseByte(key[i]);
 
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-    /* Load Multiple providers into the default (NULL) library context */
-    if (!(providerLegacy = OSSL_PROVIDER_load(NULL, "legacy")))
-        goto out;
-    if (!(providerDefault = OSSL_PROVIDER_load(NULL, "default")))
-        goto out;
-#endif
+    // #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    //     /* Load Multiple providers into the default (NULL) library context */
+    //     if (!(providerLegacy = OSSL_PROVIDER_load(NULL, "legacy")))
+    //         goto out;
+    //     if (!(providerDefault = OSSL_PROVIDER_load(NULL, "default")))
+    //         goto out;
+    // #endif
 
     if (!(des = EVP_CIPHER_CTX_new()))
         goto out;
@@ -95,33 +93,24 @@ static int encrypt_rfbdes(unsigned char* out,
 out:
     if (des)
         EVP_CIPHER_CTX_free(des);
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-    if (providerLegacy)
-        OSSL_PROVIDER_unload(providerLegacy);
-    if (providerDefault)
-        OSSL_PROVIDER_unload(providerDefault);
-#endif
+    // #if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
+    //     if (providerLegacy)
+    //         OSSL_PROVIDER_unload(providerLegacy);
+    //     if (providerDefault)
+    //         OSSL_PROVIDER_unload(providerDefault);
+    // #endif
     return result;
 }
 
-static void rfbEncryptBytes(std::vector<uint8_t>& bytes, std::string_view passwd)
+static void rfbEncryptBytes(uint8_t* challenge, const char* password)
 {
-    unsigned char key[8];
-    unsigned int i;
-    int out_len;
-
-    /* key is simply password padded with nulls */
-
-    for (i = 0; i < 8; i++) {
-        if (i < passwd.size()) {
-            key[i] = passwd[i];
-        }
-        else {
-            key[i] = 0;
-        }
-    }
-
-    encrypt_rfbdes(bytes.data(), &out_len, key, bytes.data(), bytes.size());
+    uint8_t key[8] = {0};
+    // 密码填充/截断为 8 字节
+    strncpy((char*)key, password, 8);
+    // 用密码作为 DES 密钥加密挑战值
+    DES_key_schedule schedule;
+    DES_set_key_unchecked((DES_cblock*)key, &schedule);
+    DES_ecb_encrypt((DES_cblock*)challenge, (DES_cblock*)challenge, &schedule, DES_ENCRYPT);
 }
 
 
@@ -158,6 +147,7 @@ static void printPixelFormat(proto::rfbPixelFormat& format)
 } // namespace detail
 
 client_impl::client_impl(boost::asio::io_context& executor,
+                         client_delegate* handler,
                          const proto::rfbPixelFormat& format,
                          std::string_view host,
                          uint16_t port)
@@ -167,10 +157,11 @@ client_impl::client_impl(boost::asio::io_context& executor,
     , host_(host)
     , port_(port)
     , want_format_(format)
+    , handler_(handler)
 {
-    frame_codecs_.push_back(std::make_unique<encoding::rre>());
     frame_codecs_.push_back(std::make_unique<encoding::co_rre>());
     frame_codecs_.push_back(std::make_unique<encoding::raw>());
+    frame_codecs_.push_back(std::make_unique<encoding::rre>());
     frame_codecs_.push_back(std::make_unique<encoding::copy_rect>());
 
     codecs_.push_back(std::make_unique<encoding::last_rect>());
@@ -206,8 +197,9 @@ void client_impl::start()
         executor_,
         [this, self = shared_from_this()]() -> boost::asio::awaitable<void> {
             auto ec = co_await async_connect_rfbserver();
-            if (connect_handler_)
-                connect_handler_(ec);
+            if (handler_)
+                handler_->on_connect(ec);
+
             if (ec)
                 co_return;
 
@@ -229,8 +221,8 @@ void client_impl::start()
                               remote_endp.port(),
                               e.what());
             }
-            if (disconnect_handler_)
-                disconnect_handler_(ec);
+            if (handler_)
+                handler_->on_disconnect(ec);
         },
         boost::asio::detached);
 }
@@ -398,7 +390,7 @@ boost::asio::awaitable<void> client_impl::async_authenticate()
         std::vector<proto::rfbAuthScheme> tAuth(count);
         co_await boost::asio::async_read(socket_, boost::asio::buffer(tAuth));
 
-        selected_auth_scheme = inner_select_auth_scheme(tAuth);
+        selected_auth_scheme = handler_->select_auth_scheme({tAuth.begin(), tAuth.end()});
         co_await boost::asio::async_write(socket_, boost::asio::buffer(&selected_auth_scheme, 1));
     }
     else {
@@ -423,8 +415,8 @@ boost::asio::awaitable<void> client_impl::async_authenticate()
             challenge.resize(16);
             co_await boost::asio::async_read(socket_, boost::asio::buffer(challenge));
 
-            auto password = inner_get_password();
-            detail::rfbEncryptBytes(challenge, password);
+            auto password = handler_->get_auth_password();
+            detail::rfbEncryptBytes(challenge.data(), password.c_str());
 
             co_await boost::asio::async_write(socket_, boost::asio::buffer(challenge));
 
@@ -572,8 +564,8 @@ boost::asio::awaitable<void> client_impl::server_message_loop()
             } break;
             case proto::rfbSetColourMapEntries: break;
             case proto::rfbBell: {
-                if (bell_handler_)
-                    bell_handler_();
+                if (handler_)
+                    handler_->on_bell();
             } break;
             case proto::rfbServerCutText: {
                 proto::rfbServerCutTextMsg msg {};
@@ -720,34 +712,6 @@ bool client_impl::check_rect(int x, int y, int w, int h) const
     return x + w <= width_ && y + h <= height_;
 }
 
-std::string client_impl::inner_get_password() const
-{
-    if (password_handler_)
-        return password_handler_();
-
-    std::string password;
-    std::cout << "Enter password: ";
-    std::getline(std::cin, password);
-    return password;
-}
-
-proto::rfbAuthScheme
-client_impl::inner_select_auth_scheme(const std::vector<proto::rfbAuthScheme>& auths)
-{
-    if (select_auth_scheme_handler_)
-        return select_auth_scheme_handler_(auths);
-
-    if (auths.empty())
-        return proto::rfbConnFailed;
-
-    auto iter = std::ranges::find_if(
-        auths, [](const auto& auth_scheme) { return auth_scheme == proto::rfbNoAuth; });
-
-    if (iter != auths.end())
-        return proto::rfbNoAuth;
-
-    return auths.front();
-}
 
 encoding::codec* client_impl::find_encoding(const proto::rfbEncoding& encoding)
 {
@@ -776,20 +740,15 @@ void client_impl::got_bitmap(const uint8_t* buffer, int x, int y, int w, int h)
         return;
     }
 
-#define COPY_RECT(BPP)                                                                             \
-    {                                                                                              \
-        int rs = w * BPP / 8, rs2 = width_ * BPP / 8;                                              \
-        for (int j = ((x * (BPP / 8)) + (y * rs2)); j < (y + h) * rs2; j += rs2) {                 \
-            memcpy(frame_buffer_.data() + j, buffer, rs);                                          \
-            buffer += rs;                                                                          \
-        }                                                                                          \
+    auto BPP = format_.bitsPerPixel.value();
+    if (BPP != 8 && BPP != 16 && BPP != 32) {
+        spdlog::warn("Unsupported bitsPerPixel: {}", BPP);
+        return;
     }
-
-    switch (format_.bitsPerPixel.value()) {
-        case 8: COPY_RECT(8); break;
-        case 16: COPY_RECT(16); break;
-        case 32: COPY_RECT(32); break;
-        default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
+    int rs = w * BPP / 8, rs2 = width_ * BPP / 8;
+    for (int j = ((x * (BPP / 8)) + (y * rs2)); j < (y + h) * rs2; j += rs2) {
+        memcpy(frame_buffer_.data() + j, buffer, rs);
+        buffer += rs;
     }
 }
 
@@ -819,15 +778,17 @@ void client_impl::got_fill_rect(int x, int y, int w, int h, uint32_t colour)
         spdlog::warn("Rect out of bounds: {}x{} at ({}, {})", x, y, w, h);
         return;
     }
-#define FILL_RECT(BPP)                                                                             \
-    for (int j = y * width_; j < (y + h) * width_; j += width_)                                    \
-        for (int i = x; i < x + w; i++)                                                            \
-            ((uint##BPP##_t*)frame_buffer_.data())[j + i] = colour;
+    auto fill_rect = [this]<typename T>(int x, int y, int w, int h, T colour) {
+        auto ptr = reinterpret_cast<T*>(frame_buffer_.data());
+        for (int j = y * width_; j < (y + h) * width_; j += width_)
+            for (int i = x; i < x + w; i++)
+                ptr[j + i] = colour;
+    };
 
     switch (format_.bitsPerPixel.value()) {
-        case 8: FILL_RECT(8); break;
-        case 16: FILL_RECT(16); break;
-        case 32: FILL_RECT(32); break;
+        case 8: fill_rect(x, y, w, h, (uint8_t)colour); break;
+        case 16: fill_rect(x, y, w, h, (uint16_t)colour); break;
+        case 32: fill_rect(x, y, w, h, (uint32_t)colour); break;
         default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
     }
 }
@@ -906,6 +867,7 @@ boost::asio::awaitable<void> client_impl::on_message(const proto::rfbFramebuffer
         }
     }
 
+    handler_->on_frame_update(frame_buffer_.data());
     send_framebuffer_update_request(0, 0, width_, height_, true);
 }
 
@@ -916,27 +878,23 @@ boost::asio::awaitable<void> client_impl::on_message(const proto::rfbTextChatMsg
     switch (msg.length.value()) {
         case proto::rfbTextChatOpen: {
             spdlog::info("Received TextChat Open");
-            if (text_chat_handler_)
-                text_chat_handler_(proto::rfbTextChatOpen, ""sv);
+            handler_->on_text_chat(proto::rfbTextChatOpen, ""sv);
         } break;
         case proto::rfbTextChatClose: {
             spdlog::info("Received TextChat Close");
-            if (text_chat_handler_)
-                text_chat_handler_(proto::rfbTextChatClose, ""sv);
+            handler_->on_text_chat(proto::rfbTextChatClose, ""sv);
         } break;
         case proto::rfbTextChatFinished: {
             spdlog::info("Received TextChat Finished");
-            if (text_chat_handler_)
-                text_chat_handler_(proto::rfbTextChatFinished, ""sv);
+            handler_->on_text_chat(proto::rfbTextChatFinished, ""sv);
         } break;
         default: {
             std::string message;
             message.resize(msg.length.value());
             co_await boost::asio::async_read(socket_, boost::asio::buffer(message));
 
-            spdlog::info("Received TextChat \"{}\"\n", message);
-            if (text_chat_handler_)
-                text_chat_handler_(proto::rfbTextChatMessage, message);
+            spdlog::info("Received TextChat \"{}\"", message);
+            handler_->on_text_chat(proto::rfbTextChatMessage, message);
         } break;
     }
     co_return;
@@ -982,70 +940,41 @@ boost::asio::awaitable<void> client_impl::on_message(const proto::rfbServerCutTe
      * modify here if need more types(rtf,html,dib,files)
      */
     if (!(flags.value() & proto::rfbExtendedClipboard_Text)) {
-        spdlog::info("rfbClientProcessExtServerCutText. not text type. ignore");
+        spdlog::info("rfbServerCutTextMsg. not text type. ignore");
         co_return;
     }
     if (!(flags.value() & proto::rfbExtendedClipboard_Provide)) {
-        spdlog::info("rfbClientProcessExtServerCutText. not provide type. ignore");
+        spdlog::info("rfbServerCutTextMsg. not provide type. ignore");
         co_return;
     }
     if (flags.value() & proto::rfbExtendedClipboard_Caps) {
-        spdlog::info("rfbClientProcessExtServerCutText. default cap.");
+        spdlog::info("rfbServerCutTextMsg. default cap.");
         // client->extendedClipboardServerCapabilities |=
         //     rfbExtendedClipboard_Text; /* for now, only text */
         co_return;
     }
 
-    z_stream stream {};
-    stream.zalloc   = nullptr;
-    stream.zfree    = nullptr;
-    stream.opaque   = nullptr;
-    stream.avail_in = 0;
-    stream.next_in  = nullptr;
-    if (inflateInit(&stream) != Z_OK) {
-        spdlog::error("rfbClientProcessExtServerCutText. inflateInit failed");
-        co_return;
-    }
-    stream.avail_in = buffer.size();
-    stream.next_in  = (unsigned char*)buffer.data().data();
-
     boost::endian::big_uint32_buf_t size {};
-    stream.avail_out = sizeof(size);
-    stream.next_out  = (unsigned char*)&size;
-
-    if (inflate(&stream, Z_SYNC_FLUSH) != Z_OK) {
-        spdlog::error("rfbClientProcessExtServerCutText. inflate size failed");
-        inflateEnd(&stream);
+    zstr::istream zs(input_stream);
+    if (!zs.read((char*)&size, sizeof(size))) {
+        spdlog::error("rfbServerCutTextMsg. inflate size failed");
         co_return;
     }
 
     if (size.value() > (1 << 20)) {
-        spdlog::error("rfbClientProcessExtServerCutText. size too large");
-        inflateEnd(&stream);
+        spdlog::error("rfbServerCutTextMsg. size too large");
         co_return;
     }
     text.resize(size.value());
-
-    stream.avail_out = size.value();
-    stream.next_out  = (uint8_t*)text.data();
-
-    auto out_before = stream.total_out;
-    int err         = inflate(&stream, Z_SYNC_FLUSH);
-    if (err != Z_OK && err != Z_STREAM_END) {
-        spdlog::error("rfbClientProcessExtServerCutText. inflate buf failed");
-        inflateEnd(&stream);
-        co_return;
-    }
-    if ((stream.total_out - out_before) != size.value()) {
-        spdlog::error("rfbClientProcessExtServerCutText. inflate size error");
-        inflateEnd(&stream);
+    if (!zs.read(text.data(), text.size())) {
+        spdlog::error("rfbServerCutTextMsg. inflate buf failed");
         co_return;
     }
 #else
     text.resize(ilen);
-    input_stream.read(text.data(), ilen);
+    input_stream.read(text.data(), text.size());
 #endif
-
+    spdlog::info("Got server cut text: {}", std::filesystem::u8path(text).string());
     co_return;
 }
 

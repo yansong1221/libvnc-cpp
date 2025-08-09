@@ -35,4 +35,5 @@ void client_impl::copy_rect_from_rect(int src_x, int src_y, int w, int h, int de
     }
 }
 
+
 } // namespace libvnc

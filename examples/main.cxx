@@ -10,6 +10,8 @@ int main()
 
     libvnc::proto::rfbPixelFormat format(8, 3, 4);
     libvnc::client cli(ioc, format, "127.0.0.1");
+
+    cli.set_password_handler([]() { return "123456"; });
     cli.start();
     return ioc.run();
 }

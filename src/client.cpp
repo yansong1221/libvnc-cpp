@@ -1,14 +1,51 @@
 #include "libvnc-cpp/client.h"
 #include "client_impl.h"
+#include <iostream>
 #include <ranges>
 
 namespace libvnc {
 
+
+std::string client_delegate::get_auth_password() const
+{
+    std::string password;
+    std::cout << "Enter password: ";
+    std::getline(std::cin, password);
+    return password;
+}
+
+void client_delegate::on_bell()
+{
+    return;
+}
+
+libvnc::proto::rfbAuthScheme
+client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths) const
+{
+    if (auths.empty())
+        return proto::rfbConnFailed;
+
+    if (auths.count(proto::rfbNoAuth))
+        return proto::rfbNoAuth;
+
+    if (auths.count(proto::rfbVncAuth))
+        return proto::rfbVncAuth;
+
+    return *auths.begin();
+}
+
+
+void client_delegate::on_text_chat(const proto::rfbTextChatType& type, std::string_view message)
+{
+    return;
+}
+
 client::client(boost::asio::io_context& executor,
+               client_delegate* handler,
                const proto::rfbPixelFormat& format,
                std::string_view host,
                uint16_t port /*= 5900*/)
-    : impl_(std::make_shared<client_impl>(executor, format, host, port))
+    : impl_(std::make_shared<client_impl>(executor, handler, format, host, port))
 {
 }
 
@@ -52,34 +89,5 @@ void client::send_key_event(uint32_t key, bool down)
     impl_->send_key_event(key, down);
 }
 
-void client::set_connect_handler(connect_handler_type&& handler)
-{
-    impl_->set_connect_handler(std::move(handler));
-}
-
-void client::set_password_handler(password_handler_type&& handler)
-{
-    impl_->set_password_handler(std::move(handler));
-}
-
-void client::set_disconnect_handler(disconnect_handler_type&& handler)
-{
-    impl_->set_disconnect_handler(std::move(handler));
-}
-
-void client::set_bell_handler(bell_handler_type&& handler)
-{
-    impl_->set_bell_handler(std::move(handler));
-}
-
-void client::set_select_auth_scheme_handler(select_auth_scheme_handler_type&& handler)
-{
-    impl_->set_select_auth_scheme_handler(std::move(handler));
-}
-
-void client::set_text_chat_handler(text_chat_handler_type&& handler)
-{
-    impl_->set_text_chat_handler(std::move(handler));
-}
 
 } // namespace libvnc

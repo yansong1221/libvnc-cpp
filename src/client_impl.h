@@ -9,6 +9,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/strand.hpp>
+#include <set>
 #include <span>
 
 namespace libvnc {
@@ -17,6 +18,7 @@ class client_impl : public encoding::frame_op
 {
 public:
     client_impl(boost::asio::io_context& executor,
+                client_delegate* handler,
                 const proto::rfbPixelFormat& format,
                 std::string_view host,
                 uint16_t port);
@@ -39,50 +41,6 @@ public:
 
     boost::asio::awaitable<boost::system::error_code> async_connect_rfbserver();
 
-public:
-    void set_connect_handler(client::connect_handler_type&& handler)
-    {
-        boost::asio::dispatch(executor_,
-                              [this, self = shared_from_this(), handler = std::move(handler)]() {
-                                  connect_handler_ = std::move(handler);
-                              });
-    }
-    void set_password_handler(client::password_handler_type&& handler)
-    {
-        boost::asio::dispatch(executor_,
-                              [this, self = shared_from_this(), handler = std::move(handler)]() {
-                                  password_handler_ = std::move(handler);
-                              });
-    }
-    void set_disconnect_handler(client::disconnect_handler_type&& handler)
-    {
-        boost::asio::dispatch(executor_,
-                              [this, self = shared_from_this(), handler = std::move(handler)]() {
-                                  disconnect_handler_ = std::move(handler);
-                              });
-    }
-    void set_bell_handler(client::bell_handler_type&& handler)
-    {
-        boost::asio::dispatch(executor_,
-                              [this, self = shared_from_this(), handler = std::move(handler)]() {
-                                  bell_handler_ = std::move(handler);
-                              });
-    }
-    void set_select_auth_scheme_handler(client::select_auth_scheme_handler_type&& handler)
-    {
-        boost::asio::dispatch(executor_,
-                              [this, self = shared_from_this(), handler = std::move(handler)]() {
-                                  select_auth_scheme_handler_ = std::move(handler);
-                              });
-    }
-    void set_text_chat_handler(client::text_chat_handler_type&& handler)
-    {
-        boost::asio::dispatch(executor_,
-                              [this, self = shared_from_this(), handler = std::move(handler)]() {
-                                  text_chat_handler_ = std::move(handler);
-                              });
-    }
-
 private:
     boost::asio::awaitable<void> async_authenticate();
     boost::asio::awaitable<void> async_client_init();
@@ -100,9 +58,6 @@ private:
 
     void malloc_frame_buffer();
     bool check_rect(int x, int y, int w, int h) const;
-
-    std::string inner_get_password() const;
-    proto::rfbAuthScheme inner_select_auth_scheme(const std::vector<proto::rfbAuthScheme>& auths);
 
     template<typename T>
     void copy_rect_from_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y);
@@ -148,12 +103,7 @@ private:
     boost::asio::ip::tcp::resolver resolver_;
     boost::asio::ip::tcp::socket socket_;
 
-    client::password_handler_type password_handler_;
-    client::connect_handler_type connect_handler_;
-    client::disconnect_handler_type disconnect_handler_;
-    client::bell_handler_type bell_handler_;
-    client::select_auth_scheme_handler_type select_auth_scheme_handler_;
-    client::text_chat_handler_type text_chat_handler_;
+    client_delegate* handler_;
 
 
     supported_messages supported_messages_;
@@ -185,6 +135,9 @@ private:
     std::vector<std::unique_ptr<encoding::frame_codec>> frame_codecs_;
     std::vector<std::unique_ptr<encoding::codec>> codecs_;
 };
+
+
+
 } // namespace libvnc
 
 #include "client_impl.inl"

@@ -20,15 +20,15 @@ public:
     {
         switch (format.bitsPerPixel.value()) {
             case 8: {
-                co_await handle_rre<boost::endian::big_uint8_buf_t>(
+                co_await handle_rre<uint8_t>(
                     op, socket, rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
             } break;
             case 16: {
-                co_await handle_rre<boost::endian::big_uint16_buf_t>(
+                co_await handle_rre<uint16_t>(
                     op, socket, rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
             } break;
             case 32: {
-                co_await handle_rre<boost::endian::big_uint32_buf_t>(
+                co_await handle_rre<uint32_t>(
                     op, socket, rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
             } break;
             default: break;
@@ -53,7 +53,7 @@ private:
                                          boost::asio::buffer(&nSubrects, sizeof(nSubrects)));
         co_await boost::asio::async_read(socket, boost::asio::buffer(&pix, sizeof(pix)));
 
-        op->got_fill_rect(rx, ry, rw, rh, pix.value());
+        op->got_fill_rect(rx, ry, rw, rh, pix);
 
         for (int i = 0; i < nSubrects.value(); i++) {
             co_await boost::asio::async_read(socket, boost::asio::buffer(&pix, sizeof(pix)));
@@ -64,7 +64,7 @@ private:
                               ry + subrect.y.value(),
                               subrect.w.value(),
                               subrect.h.value(),
-                              pix.value());
+                              pix);
         }
     }
 };
@@ -75,7 +75,10 @@ class co_rre : public frame_codec
 public:
     void reset() override { buffer_.consume(buffer_.size()); }
     std::string codec_name() const override { return "corre"; }
-    proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingCoRRE; }
+    proto::rfbEncoding encoding_code() const override
+    {
+        return proto::rfbEncoding::rfbEncodingCoRRE;
+    }
 
     boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
                                         const proto::rfbRectangle& rect,
@@ -84,15 +87,15 @@ public:
     {
         switch (format.bitsPerPixel.value()) {
             case 8: {
-                co_await handle_co_rre<boost::endian::big_uint8_buf_t>(
+                co_await handle_co_rre<uint8_t>(
                     op, socket, rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
             } break;
             case 16: {
-                co_await handle_co_rre<boost::endian::big_uint16_buf_t>(
+                co_await handle_co_rre<uint16_t>(
                     op, socket, rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
             } break;
             case 32: {
-                co_await handle_co_rre<boost::endian::big_uint32_buf_t>(
+                co_await handle_co_rre<uint32_t>(
                     op, socket, rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
             } break;
             default: break;
@@ -117,7 +120,7 @@ private:
                                          boost::asio::buffer(&nSubrects, sizeof(nSubrects)));
         co_await boost::asio::async_read(socket, boost::asio::buffer(&pix, sizeof(pix)));
 
-        op->got_fill_rect(rx, ry, rw, rh, pix.value());
+        op->got_fill_rect(rx, ry, rw, rh, pix);
 
         auto bytes = co_await boost::asio::async_read(
             socket,
@@ -134,7 +137,7 @@ private:
             auto w = *ptr++;
             auto h = *ptr++;
 
-            op->got_fill_rect(rx + x, ry + y, w, h, pix.value());
+            op->got_fill_rect(rx + x, ry + y, w, h, pix);
         }
         buffer_.consume(bytes);
     }

@@ -48,6 +48,9 @@ rfbPixelFormat::rfbPixelFormat(int bitsPerSample, int samplesPerPixel, int bytes
             }
         }
     }
+    redShift   = 16;
+    greenShift = 8;
+    blueShift  = 0;
 }
 
 } // namespace libvnc::proto
