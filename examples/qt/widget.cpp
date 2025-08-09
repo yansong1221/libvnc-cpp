@@ -19,9 +19,9 @@ void Widget::on_disconnect(const boost::system::error_code& ec)
 {
 }
 
-void Widget::on_frame_update(const uint8_t* buffer)
+void Widget::on_frame_update(const libvnc::frame_buffer& buffer)
 {
-    auto image = QImage(buffer, client_.get_width(), client_.get_height(), QImage::Format_ARGB32).copy();
+    auto image = QImage(buffer.data().data(), buffer.width(), buffer.height(), QImage::Format_ARGB32).copy();
 
     QMetaObject::invokeMethod(this, [this, image]() {
         image_ = image;

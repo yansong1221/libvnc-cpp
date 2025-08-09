@@ -1,4 +1,5 @@
 #pragma once
+#include "frame_buffer.h"
 #include "proto.h"
 #include <boost/asio/any_io_executor.hpp>
 #include <memory>
@@ -18,7 +19,7 @@ public:
     virtual proto::rfbAuthScheme
     select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths) const;
     virtual void on_text_chat(const proto::rfbTextChatType& type, std::string_view message);
-    virtual void on_frame_update(const uint8_t* buffer) = 0;
+    virtual void on_frame_update(const frame_buffer&) = 0;
 };
 
 class client_impl;
@@ -36,8 +37,7 @@ public:
     void start();
     void close();
 
-    int get_width() const;
-    int get_height() const;
+    const frame_buffer& frame() const;
 
     void set_format(const proto::rfbPixelFormat& format);
     void send_pointer_event(int x, int y, int buttonMask);

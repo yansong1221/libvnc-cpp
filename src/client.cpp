@@ -64,15 +64,11 @@ void client::close()
     impl_->close();
 }
 
-int client::get_width() const
+const frame_buffer& client::frame() const
 {
-    return impl_->get_width();
+    return impl_->frame();
 }
 
-int client::get_height() const
-{
-    return impl_->get_height();
-}
 
 void client::set_format(const proto::rfbPixelFormat& format)
 {

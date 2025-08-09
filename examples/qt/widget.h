@@ -15,7 +15,7 @@ public:
 protected:
     void on_connect(const boost::system::error_code& ec) override;
     void on_disconnect(const boost::system::error_code& ec) override;
-    void on_frame_update(const uint8_t* buffer) override;
+    void on_frame_update(const libvnc::frame_buffer& buffer) override;
 
     void paintEvent(QPaintEvent*) override;
 

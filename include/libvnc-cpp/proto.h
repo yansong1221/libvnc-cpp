@@ -257,8 +257,8 @@ struct rfbPixelFormat
 
 struct rfbSetPixelFormatMsg
 {
-    boost::endian::big_uint8_buf_t pad1;
-    boost::endian::big_uint16_buf_t pad2;
+    boost::endian::big_uint8_buf_t pad1 {};
+    boost::endian::big_uint16_buf_t pad2 {};
     rfbPixelFormat format;
 };
 

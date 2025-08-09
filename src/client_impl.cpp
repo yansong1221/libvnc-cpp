@@ -159,9 +159,10 @@ client_impl::client_impl(boost::asio::io_context& executor,
     , want_format_(format)
     , handler_(handler)
 {
+    frame_codecs_.push_back(std::make_unique<encoding::rre>());
     frame_codecs_.push_back(std::make_unique<encoding::co_rre>());
     frame_codecs_.push_back(std::make_unique<encoding::raw>());
-    frame_codecs_.push_back(std::make_unique<encoding::rre>());
+    
     frame_codecs_.push_back(std::make_unique<encoding::copy_rect>());
 
     codecs_.push_back(std::make_unique<encoding::last_rect>());
@@ -172,14 +173,9 @@ client_impl::client_impl(boost::asio::io_context& executor,
     codecs_.push_back(std::make_unique<encoding::pointer_pos>());
 }
 
-int client_impl::get_width() const
+const libvnc::frame_buffer& client_impl::frame() const
 {
-    return width_;
-}
-
-int client_impl::get_height() const
-{
-    return height_;
+    return buffer_;
 }
 
 void client_impl::close()
@@ -236,6 +232,11 @@ void client_impl::send_framebuffer_update_request(int x, int y, int w, int h, bo
     msg.h           = h;
     msg.incremental = incremental;
     send_msg_to_server(proto::rfbFramebufferUpdateRequest, &msg, sizeof(msg));
+}
+
+void client_impl::send_framebuffer_update_request(bool incremental)
+{
+    return send_framebuffer_update_request(0, 0, buffer_.width(), buffer_.width(), incremental);
 }
 
 std::vector<std::string> client_impl::supported_encodings() const
@@ -467,18 +468,14 @@ boost::asio::awaitable<void> client_impl::async_client_init()
 
     detail::printPixelFormat(si.format);
 
-    width_         = si.framebufferWidth.value();
-    height_        = si.framebufferHeight.value();
-    server_format_ = si.format;
-    desktop_name_  = std::move(name);
-    format_        = server_format_;
+    buffer_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
 
-    malloc_frame_buffer();
+    desktop_name_ = std::move(name);
 
     set_format(want_format_);
     set_encodings(supported_encodings());
 
-    send_framebuffer_update_request(0, 0, width_, height_, false);
+    send_framebuffer_update_request(false);
 }
 
 void client_impl::set_format(const proto::rfbPixelFormat& format)
@@ -488,10 +485,8 @@ void client_impl::set_format(const proto::rfbPixelFormat& format)
     spf.pad2   = 0;
     spf.format = format;
 
-    if (supported_messages_.supports_client2server(proto::rfbSetPixelFormat))
-        format_ = format;
-
-    send_msg_to_server(proto::rfbSetPixelFormat, &spf, sizeof(spf));
+    if (send_msg_to_server(proto::rfbSetPixelFormat, &spf, sizeof(spf)))
+        buffer_.set_format(format);
 }
 
 void client_impl::set_encodings(const std::vector<std::string>& encodings)
@@ -648,13 +643,13 @@ boost::asio::awaitable<std::string> client_impl::read_error_reason()
     co_return reason;
 }
 
-void client_impl::send_msg_to_server(const proto::rfbClientToServerMsg& ID,
+bool client_impl::send_msg_to_server(const proto::rfbClientToServerMsg& ID,
                                      const void* data,
                                      std::size_t len)
 {
     if (!supported_messages_.supports_client2server(ID)) {
         spdlog::warn("Unsupported client2server protocol: {}", (int)ID);
-        return;
+        return false;
     }
 
     std::vector<uint8_t> buffer;
@@ -662,6 +657,7 @@ void client_impl::send_msg_to_server(const proto::rfbClientToServerMsg& ID,
     buffer.push_back(ID);
     std::copy((uint8_t*)data, (uint8_t*)data + len, std::back_inserter(buffer));
     send_raw_data(std::move(buffer));
+    return true;
 }
 
 void client_impl::send_raw_data(const std::span<uint8_t>& data)
@@ -697,21 +693,6 @@ void client_impl::send_raw_data(std::vector<uint8_t>&& data)
     });
 }
 
-void client_impl::malloc_frame_buffer()
-{
-    /* SECURITY: promote 'width' into uint64_t so that the multiplication does not overflow
-   'width' and 'height' are 16-bit integers per RFB protocol design
-   SIZE_MAX is the maximum value that can fit into size_t
-*/
-    auto allocSize = (uint64_t)width_ * height_ * format_.bitsPerPixel.value() / 8;
-    frame_buffer_.resize(allocSize);
-}
-
-bool client_impl::check_rect(int x, int y, int w, int h) const
-{
-    return x + w <= width_ && y + h <= height_;
-}
-
 
 encoding::codec* client_impl::find_encoding(const proto::rfbEncoding& encoding)
 {
@@ -735,72 +716,24 @@ encoding::codec* client_impl::find_encoding(const proto::rfbEncoding& encoding)
 
 void client_impl::got_bitmap(const uint8_t* buffer, int x, int y, int w, int h)
 {
-    if (!check_rect(x, y, w, h)) {
-        spdlog::warn("Rect out of bounds: {}x{} at ({}, {})", x, y, w, h);
-        return;
-    }
-
-    auto BPP = format_.bitsPerPixel.value();
-    if (BPP != 8 && BPP != 16 && BPP != 32) {
-        spdlog::warn("Unsupported bitsPerPixel: {}", BPP);
-        return;
-    }
-    int rs = w * BPP / 8, rs2 = width_ * BPP / 8;
-    for (int j = ((x * (BPP / 8)) + (y * rs2)); j < (y + h) * rs2; j += rs2) {
-        memcpy(frame_buffer_.data() + j, buffer, rs);
-        buffer += rs;
-    }
+    buffer_.got_bitmap(buffer, x, y, w, h);
 }
 
 void client_impl::got_copy_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y)
 {
-    if (!check_rect(src_x, src_y, w, h)) {
-        spdlog::warn("Source rect out of bounds:{}x{} at ({}, {})", src_x, src_y, w, h);
-        return;
-    }
-
-    if (!check_rect(dest_x, dest_y, w, h)) {
-        spdlog::warn("Dest rect out of bounds: {}x{} at ({}, {})", dest_x, dest_y, w, h);
-        return;
-    }
-
-    switch (format_.bitsPerPixel.value()) {
-        case 8: copy_rect_from_rect<uint8_t>(src_x, src_y, w, h, dest_x, dest_y); break;
-        case 16: copy_rect_from_rect<uint16_t>(src_x, src_y, w, h, dest_x, dest_y); break;
-        case 32: copy_rect_from_rect<uint32_t>(src_x, src_y, w, h, dest_x, dest_y); break;
-        default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
-    }
+    buffer_.got_copy_rect(src_x, src_y, w, h, dest_x, dest_y);
 }
 
 void client_impl::got_fill_rect(int x, int y, int w, int h, uint32_t colour)
 {
-    if (!check_rect(x, y, w, h)) {
-        spdlog::warn("Rect out of bounds: {}x{} at ({}, {})", x, y, w, h);
-        return;
-    }
-    auto fill_rect = [this]<typename T>(int x, int y, int w, int h, T colour) {
-        auto ptr = reinterpret_cast<T*>(frame_buffer_.data());
-        for (int j = y * width_; j < (y + h) * width_; j += width_)
-            for (int i = x; i < x + w; i++)
-                ptr[j + i] = colour;
-    };
-
-    switch (format_.bitsPerPixel.value()) {
-        case 8: fill_rect(x, y, w, h, (uint8_t)colour); break;
-        case 16: fill_rect(x, y, w, h, (uint16_t)colour); break;
-        case 32: fill_rect(x, y, w, h, (uint32_t)colour); break;
-        default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
-    }
+    buffer_.got_fill_rect(x, y, w, h, colour);
 }
 
 void client_impl::resize_client_buffer(int width, int height)
 {
-    width_  = width;
-    height_ = height;
+    buffer_.set_size(width, height);
 
-    malloc_frame_buffer();
-
-    send_framebuffer_update_request(0, 0, width, height, false);
+    send_framebuffer_update_request(false);
     spdlog::info("Got new framebuffer size: {}x{}", width, height);
 }
 
@@ -861,14 +794,15 @@ boost::asio::awaitable<void> client_impl::on_message(const proto::rfbFramebuffer
                 if (!enc)
                     throw;
 
-                co_await enc->decode(socket_, UpdateRect.r, format_, shared_from_this());
+                co_await enc->decode(
+                    socket_, UpdateRect.r, buffer_.pixel_format(), shared_from_this());
 
             } break;
         }
     }
 
-    handler_->on_frame_update(frame_buffer_.data());
-    send_framebuffer_update_request(0, 0, width_, height_, true);
+    handler_->on_frame_update(buffer_);
+    send_framebuffer_update_request(true);
 }
 
 boost::asio::awaitable<void> client_impl::on_message(const proto::rfbTextChatMsg& msg)

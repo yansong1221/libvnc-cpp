@@ -24,8 +24,8 @@ public:
                 uint16_t port);
 
 public:
-    int get_width() const;
-    int get_height() const;
+    const frame_buffer& frame() const;
+
 
     void close();
     void start();
@@ -34,6 +34,8 @@ public:
     void set_encodings(const std::vector<std::string>& encodings);
 
     void send_framebuffer_update_request(int x, int y, int w, int h, bool incremental);
+    void send_framebuffer_update_request(bool incremental);
+
     std::vector<std::string> supported_encodings() const;
 
     void send_pointer_event(int x, int y, int buttonMask);
@@ -50,17 +52,12 @@ private:
     boost::asio::awaitable<void> read_auth_result();
     boost::asio::awaitable<std::string> read_error_reason();
 
-    void send_msg_to_server(const proto::rfbClientToServerMsg& ID,
+    bool send_msg_to_server(const proto::rfbClientToServerMsg& ID,
                             const void* data,
                             std::size_t len);
     void send_raw_data(const std::span<uint8_t>& data);
     void send_raw_data(std::vector<uint8_t>&& data);
 
-    void malloc_frame_buffer();
-    bool check_rect(int x, int y, int w, int h) const;
-
-    template<typename T>
-    void copy_rect_from_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y);
 
     encoding::codec* find_encoding(const proto::rfbEncoding& encoding);
 
@@ -84,17 +81,14 @@ private:
     boost::asio::io_context& executor_;
 
     std::list<std::vector<uint8_t>> send_que_;
-    std::vector<uint8_t> frame_buffer_;
 
     std::string host_ = "127.0.0.1";
     uint16_t port_    = 5900;
 
     proto::rfbPixelFormat want_format_;
-    proto::rfbPixelFormat format_;
 
-    int width_  = 0;
-    int height_ = 0;
-    proto::rfbPixelFormat server_format_;
+    frame_buffer buffer_;
+
     std::string desktop_name_;
 
     /** negotiated protocol version */
@@ -137,7 +131,4 @@ private:
 };
 
 
-
 } // namespace libvnc
-
-#include "client_impl.inl"
