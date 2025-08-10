@@ -13,9 +13,10 @@ public:
     ~Widget();
 
 protected:
-    void on_connect(const boost::system::error_code& ec) override;
-    void on_disconnect(const boost::system::error_code& ec) override;
+    void on_connect(const libvnc::error& ec) override;
+    void on_disconnect(const libvnc::error& ec) override;
     void on_frame_update(const libvnc::frame_buffer& buffer) override;
+    std::string get_auth_password() const override;
 
     void paintEvent(QPaintEvent*) override;
 

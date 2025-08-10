@@ -14,6 +14,15 @@ std::string client_delegate::get_auth_password() const
     return password;
 }
 
+proto::rfbPixelFormat client_delegate::want_format() const
+{
+    libvnc::proto::rfbPixelFormat format(8, 3, 4);
+    format.redShift   = 16;
+    format.greenShift = 8;
+    format.blueShift  = 0;
+    return format;
+}
+
 void client_delegate::on_bell()
 {
     return;
@@ -42,10 +51,9 @@ void client_delegate::on_text_chat(const proto::rfbTextChatType& type, std::stri
 
 client::client(boost::asio::io_context& executor,
                client_delegate* handler,
-               const proto::rfbPixelFormat& format,
                std::string_view host,
                uint16_t port /*= 5900*/)
-    : impl_(std::make_shared<client_impl>(executor, handler, format, host, port))
+    : impl_(std::make_shared<client_impl>(executor.get_executor(), handler, host, port))
 {
 }
 

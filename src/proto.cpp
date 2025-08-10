@@ -1,4 +1,5 @@
 #include "libvnc-cpp/proto.h"
+#include <spdlog/spdlog.h>
 
 namespace libvnc::proto {
 
@@ -48,9 +49,37 @@ rfbPixelFormat::rfbPixelFormat(int bitsPerSample, int samplesPerPixel, int bytes
             }
         }
     }
-    redShift   = 16;
-    greenShift = 8;
-    blueShift  = 0;
+}
+
+void rfbPixelFormat::print() const
+{
+    std::string message;
+    if (bitsPerPixel.value() == 1) {
+        message += fmt::format(
+            "  Single bit per pixel.\n  {} significant bit in each byte is leftmost on the screen.",
+            (bigEndian.value() ? "Most" : "Least"));
+    }
+    else {
+        message += fmt::format("  {} bits per pixel.", bitsPerPixel.value());
+        if (bitsPerPixel.value() != 8) {
+            message += fmt::format("  {} significant byte first in each pixel.",
+                                   (bigEndian.value() ? "Most" : "Least"));
+        }
+        if (trueColour.value()) {
+            message += fmt::format("  TRUE colour: max red {} green {} blue {}"
+                                   ", shift red {} green {} blue {}",
+                                   redMax.value(),
+                                   greenMax.value(),
+                                   blueMax.value(),
+                                   redShift.value(),
+                                   greenShift.value(),
+                                   blueShift.value());
+        }
+        else {
+            message += fmt::format("  Colour map (not true colour).");
+        }
+    }
+    spdlog::info(message);
 }
 
 } // namespace libvnc::proto

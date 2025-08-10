@@ -1,6 +1,7 @@
 #pragma once
 #include "encoding/encoding.h"
 #include "libvnc-cpp/client.h"
+#include "libvnc-cpp/error.h"
 #include "libvnc-cpp/proto.h"
 #include "rfb.h"
 #include "spdlog/spdlog.h"
@@ -17,9 +18,8 @@ namespace libvnc {
 class client_impl : public encoding::frame_op
 {
 public:
-    client_impl(boost::asio::io_context& executor,
+    client_impl(const boost::asio::any_io_executor& executor,
                 client_delegate* handler,
-                const proto::rfbPixelFormat& format,
                 std::string_view host,
                 uint16_t port);
 
@@ -41,16 +41,16 @@ public:
     void send_pointer_event(int x, int y, int buttonMask);
     void send_key_event(uint32_t key, bool down);
 
-    boost::asio::awaitable<boost::system::error_code> async_connect_rfbserver();
+    boost::asio::awaitable<error> async_connect_rfbserver();
 
 private:
-    boost::asio::awaitable<void> async_authenticate();
-    boost::asio::awaitable<void> async_client_init();
+    boost::asio::awaitable<error> async_authenticate();
+    boost::asio::awaitable<error> async_client_init();
 
     boost::asio::awaitable<void> server_message_loop();
 
-    boost::asio::awaitable<void> read_auth_result();
-    boost::asio::awaitable<std::string> read_error_reason();
+    boost::asio::awaitable<error> read_auth_result();
+    boost::asio::awaitable<error> read_error_reason();
 
     bool send_msg_to_server(const proto::rfbClientToServerMsg& ID,
                             const void* data,
@@ -78,16 +78,15 @@ private:
 
 
 private:
-    boost::asio::io_context& executor_;
+    boost::asio::strand<boost::asio::any_io_executor> strand_;
 
     std::list<std::vector<uint8_t>> send_que_;
 
     std::string host_ = "127.0.0.1";
     uint16_t port_    = 5900;
 
-    proto::rfbPixelFormat want_format_;
-
     frame_buffer buffer_;
+    std::mutex buffer_mutex_;
 
     std::string desktop_name_;
 

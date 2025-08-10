@@ -1,4 +1,5 @@
 #pragma once
+#include "error.h"
 #include "frame_buffer.h"
 #include "proto.h"
 #include <boost/asio/any_io_executor.hpp>
@@ -6,15 +7,20 @@
 #include <set>
 
 namespace libvnc {
+class error;
+}
+
+namespace libvnc {
 
 
 class client_delegate
 {
 public:
-    virtual ~client_delegate()                                      = default;
-    virtual void on_connect(const boost::system::error_code& ec)    = 0;
-    virtual void on_disconnect(const boost::system::error_code& ec) = 0;
+    virtual ~client_delegate()                  = default;
+    virtual void on_connect(const error& ec)    = 0;
+    virtual void on_disconnect(const error& ec) = 0;
     virtual std::string get_auth_password() const;
+    virtual proto::rfbPixelFormat want_format() const;
     virtual void on_bell();
     virtual proto::rfbAuthScheme
     select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths) const;
@@ -28,7 +34,6 @@ class client
 public:
     client(boost::asio::io_context& executor,
            client_delegate* handler,
-           const proto::rfbPixelFormat& format,
            std::string_view host,
            uint16_t port = 5900);
     virtual ~client();

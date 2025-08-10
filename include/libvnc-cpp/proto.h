@@ -253,6 +253,7 @@ struct rfbPixelFormat
 
     rfbPixelFormat() = default;
     rfbPixelFormat(int bitsPerSample, int samplesPerPixel, int bytesPerPixel);
+    void print() const;
 };
 
 struct rfbSetPixelFormatMsg
