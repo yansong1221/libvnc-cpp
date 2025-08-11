@@ -44,9 +44,8 @@ public:
     void send_pointer_event(int x, int y, int buttonMask);
     void send_key_event(uint32_t key, bool down);
 
-    boost::asio::awaitable<error> async_connect_rfbserver();
-
 private:
+    boost::asio::awaitable<error> async_connect_rfbserver();
     boost::asio::awaitable<error> async_authenticate();
     boost::asio::awaitable<error> async_client_init();
 
