@@ -139,7 +139,8 @@ void client_impl::start()
 
 boost::asio::awaitable<libvnc::error> client_impl::co_start()
 {
-    error err = co_await async_connect_rfbserver();
+    is_initialization_completed_ = false;
+    error err                    = co_await async_connect_rfbserver();
     handler_->on_connect(err);
     if (err)
         co_return err;
@@ -154,6 +155,7 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
                       remote_endp.port(),
                       ec.message());
     }
+    is_initialization_completed_ = false;
     handler_->on_disconnect(err);
     co_return err;
 }
@@ -441,7 +443,8 @@ boost::asio::awaitable<error> client_impl::async_client_init()
 
     buffer_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
 
-    desktop_name_ = std::move(name);
+    desktop_name_                = std::move(name);
+    is_initialization_completed_ = true;
 
     set_format(handler_->want_format());
     set_frame_encodings(supported_frame_encodings());
@@ -628,6 +631,12 @@ void client_impl::send_raw_data(const std::span<uint8_t>& data)
 void client_impl::send_raw_data(std::vector<uint8_t>&& data)
 {
     boost::asio::dispatch(strand_, [this, self = shared_from_this(), data = std::move(data)]() {
+        if (!socket_.is_open())
+            return;
+
+        if (!is_initialization_completed_)
+            return;
+
         bool write_in_proccess = !send_que_.empty();
         send_que_.push_back(std::move(data));
         if (write_in_proccess)
