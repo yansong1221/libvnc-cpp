@@ -23,7 +23,7 @@ public:
         int y = rect.y.value();
         int h = rect.h.value();
 
-        auto bytesPerLine = rect.w.value() * buffer.pixel_format().bitsPerPixel.value() / 8;
+        auto bytesPerLine = rect.w.value() * buffer.bytes_per_pixel();
 
         /* RealVNC 4.x-5.x on OSX can induce bytesPerLine==0,
            usually during GPU accel. */

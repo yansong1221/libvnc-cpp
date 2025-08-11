@@ -44,6 +44,8 @@
 #include "encoding/server_identity.hpp"
 #include "encoding/supported_encodings.hpp"
 #include "encoding/supported_messages.hpp"
+#include "encoding/ultra.hpp"
+#include <boost/asio/experimental/awaitable_operators.hpp>
 #include <filesystem>
 #include <iostream>
 #include <ranges>
@@ -97,6 +99,7 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor, client_de
     message_map_[proto::rfbPalmVNCReSizeFrameBuffer] =
         std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
 
+    codecs_.push_back(std::make_unique<encoding::ultra>());
     codecs_.push_back(std::make_unique<encoding::raw>());
     codecs_.push_back(std::make_unique<encoding::rre>());
     codecs_.push_back(std::make_unique<encoding::co_rre>());
@@ -146,15 +149,29 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
     if (err)
         co_return err;
 
+    is_initialization_completed_ = true;
+
+    set_format(handler_->want_format());
+    set_frame_encodings(supported_frame_encodings());
+    send_framebuffer_update_request(false);
+
     boost::system::error_code ec;
     auto remote_endp = socket_.remote_endpoint(ec);
 
+    // using namespace boost::asio::experimental::awaitable_operators;
     err = co_await server_message_loop();
+    // std::visit(
+    //     [&](auto&& arg) {
+    //         using value_type = std::decay_t<decltype(arg)>;
+    //         if constexpr (std::same_as<value_type, error>)
+    //             err = arg;
+    //     },
+    //     result);
     if (err) {
         spdlog::error("Disconnect from the rbfserver [{}:{}] : {}",
                       remote_endp.address().to_string(),
                       remote_endp.port(),
-                      ec.message());
+                      err.message());
     }
     is_initialization_completed_ = false;
     handler_->on_disconnect(err);
@@ -441,13 +458,7 @@ boost::asio::awaitable<error> client_impl::async_client_init()
 
     buffer_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
 
-    desktop_name_                = std::move(name);
-    is_initialization_completed_ = true;
-
-    set_format(handler_->want_format());
-    set_frame_encodings(supported_frame_encodings());
-
-    send_framebuffer_update_request(false);
+    desktop_name_ = std::move(name);
     co_return error {};
 }
 
@@ -538,9 +549,26 @@ boost::asio::awaitable<error> client_impl::server_message_loop()
             co_return error::make_error(
                 boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type));
         }
+        auto err = co_await iter->second();
+        if (!err)
+            continue;
 
-        if (auto err = co_await iter->second(); err)
-            co_return err;
+        co_return err;
+    }
+}
+
+boost::asio::awaitable<void> client_impl::send_framebuffer_update_loop()
+{
+    using namespace std::chrono_literals;
+    boost::asio::steady_timer timer(strand_);
+    boost::system::error_code ec;
+    for (;;) {
+        timer.expires_after(16ms);
+        co_await timer.async_wait(net_awaitable[ec]);
+        if (ec)
+            co_return;
+
+        // send_framebuffer_update_request(true);
     }
 }
 
@@ -722,9 +750,10 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
         auto err = co_await codec->decode(socket_, UpdateRect.r, buffer_, shared_from_this());
         if (err)
             co_return err;
-    }
 
-    handler_->on_frame_update(buffer_);
+        if (codec->is_frame_codec())
+            handler_->on_frame_update(buffer_);
+    }
     send_framebuffer_update_request(true);
     co_return error {};
 }

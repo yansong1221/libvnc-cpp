@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 #include <span>
+#include <queue>
 
 namespace libvnc {
 
@@ -47,6 +48,7 @@ private:
     boost::asio::awaitable<error> async_client_init();
 
     boost::asio::awaitable<error> server_message_loop();
+    boost::asio::awaitable<void> send_framebuffer_update_loop();
 
     boost::asio::awaitable<error> read_auth_result();
     boost::asio::awaitable<error> read_error_reason();
@@ -87,7 +89,7 @@ public:
     boost::asio::strand<boost::asio::any_io_executor> strand_;
     boost::asio::ip::tcp::resolver resolver_;
     boost::asio::ip::tcp::socket socket_;
-    std::list<std::vector<uint8_t>> send_que_;
+    std::deque<std::vector<uint8_t>> send_que_;
     bool is_initialization_completed_ = false;
 
     std::string host_   = "127.0.0.1";

@@ -15,7 +15,8 @@ public:
     {
         none              = 0,
         auth_error        = 1,
-        client_init_error = 2
+        client_init_error = 2,
+        frame_error
     };
 
     custom_error() = default;

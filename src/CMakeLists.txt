@@ -13,6 +13,9 @@ FetchContent_MakeAvailable(ZStrGitRepo) # defines INTERFACE target 'zstr::zstr'
 
 find_package(ZLIB REQUIRED)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LZO REQUIRED lzo2)
+
 
 file(GLOB_RECURSE MOUDLE_SOURCE_FILES  ${LIBVNC_CPP_SRC_DIR}/*.h ${LIBVNC_CPP_SRC_DIR}/*.c ${LIBVNC_CPP_SRC_DIR}/*.cxx ${LIBVNC_CPP_SRC_DIR}/*.cpp ${LIBVNC_CPP_SRC_DIR}/*.hpp)
 source_group(TREE ${LIBVNC_CPP_SRC_DIR} PREFIX "src" FILES ${MOUDLE_SOURCE_FILES})
@@ -28,6 +31,16 @@ target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian
  OpenSSL::SSL OpenSSL::Crypto
 PRIVATE zstr::zstr  ZLIB::ZLIB
 )
+
+if(LZO_FOUND)
+    message(STATUS "Found LZO via pkg-config")
+    target_include_directories(${MOUDLE} PRIVATE ${LZO_INCLUDE_DIRS})
+    target_link_directories(${MOUDLE} PUBLIC ${LZO_LIBRARY_DIRS})
+    target_link_libraries(${MOUDLE} PUBLIC ${LZO_LIBRARIES})
+    
+else()
+    message(FATAL_ERROR "LZO library not found")
+endif()
 
 target_include_directories(${MOUDLE}
     PUBLIC
