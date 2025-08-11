@@ -34,7 +34,6 @@ bool error::is_system_error() const noexcept
 
 error error::make_error(custom_error::code c, std::string msg)
 {
-    spdlog::error(msg);
     return custom_error(c, msg);
 }
 

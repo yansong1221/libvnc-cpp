@@ -575,13 +575,13 @@ boost::asio::awaitable<error> client_impl::read_auth_result()
         case proto::rfbVncAuthTooMany: {
             std::string msg = "VNC authentication failed - too many tries";
             spdlog::error(msg);
-            co_return custom_error {custom_error::auth_error, msg};
+            co_return error::make_error(custom_error::auth_error, msg);
         } break;
         default: break;
     }
-    co_return error::make_error(
-        custom_error::auth_error,
-        std::format("Unknown VNC authentication result: {}", authResult.value()));
+    auto msg = std::format("Unknown VNC authentication result: {}", authResult.value());
+    spdlog::error(msg);
+    co_return error::make_error(custom_error::auth_error, msg);
 }
 
 boost::asio::awaitable<error> client_impl::read_error_reason()
@@ -594,10 +594,11 @@ boost::asio::awaitable<error> client_impl::read_error_reason()
         co_return error::make_error(ec);
 
     if (reasonLen.value() > 1 << 20) {
-        co_return error::make_error(
-            custom_error::auth_error,
+        auto msg =
             fmt::format("VNC connection failed, but sent reason length of {} exceeds limit of 1MB",
-                        reasonLen.value()));
+                        reasonLen.value());
+        spdlog::error(msg);
+        co_return error::make_error(custom_error::auth_error, msg);
     }
 
     std::string reason;
@@ -607,8 +608,8 @@ boost::asio::awaitable<error> client_impl::read_error_reason()
     if (ec)
         co_return error::make_error(ec);
 
-    co_return error::make_error(custom_error::auth_error,
-                                fmt::format("VNC connection failed: {}", reason));
+    spdlog::error("VNC connection failed: {}", reason);
+    co_return error::make_error(custom_error::auth_error, reason);
 }
 
 bool client_impl::send_msg_to_server(const proto::rfbClientToServerMsg& ID,
@@ -768,8 +769,8 @@ boost::asio::awaitable<void> client_impl::on_message(const proto::rfbFramebuffer
             } break;
         }
     }
-
-    handler_->on_frame_update(buffer_);
+    if (handler_)
+        handler_->on_frame_update(buffer_);
     send_framebuffer_update_request(true);
 }
 
