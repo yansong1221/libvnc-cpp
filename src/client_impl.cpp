@@ -140,12 +140,11 @@ void client_impl::start()
 boost::asio::awaitable<libvnc::error> client_impl::co_start()
 {
     is_initialization_completed_ = false;
-    error err                    = co_await async_connect_rfbserver();
+
+    error err = co_await async_connect_rfbserver();
     handler_->on_connect(err);
     if (err)
         co_return err;
-
-    is_initialization_completed_ = true;
 
     boost::system::error_code ec;
     auto remote_endp = socket_.remote_endpoint(ec);
@@ -442,7 +441,8 @@ boost::asio::awaitable<error> client_impl::async_client_init()
 
     buffer_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
 
-    desktop_name_ = std::move(name);
+    desktop_name_                = std::move(name);
+    is_initialization_completed_ = true;
 
     set_format(handler_->want_format());
     set_frame_encodings(supported_frame_encodings());
