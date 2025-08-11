@@ -198,11 +198,8 @@ void client_impl::send_pointer_event(int x, int y, int buttonMask)
 {
     proto::rfbPointerEventMsg pe {};
     pe.buttonMask = buttonMask;
-    if (x < 0)
-        x = 0;
-    if (y < 0)
-        y = 0;
-
+    pe.x          = std::max(x, 0);
+    pe.y          = std::max(x, y);
     send_msg_to_server(proto::rfbPointerEvent, &pe, sizeof(pe));
 }
 

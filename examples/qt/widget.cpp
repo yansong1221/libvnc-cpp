@@ -4,13 +4,13 @@
 
 Widget::Widget(QWidget* parent)
     : QWidget(parent)
-    , client_(ioc_, this, "192.168.101.8")
+    , client_(ioc_, this)
 {
     auto timer = new QTimer(this);
     timer->setInterval(10);
     timer->start();
     connect(timer, &QTimer::timeout, this, [this]() { ioc_.poll(); });
-
+    client_.set_host("192.168.101.8");
     client_.start();
 }
 
