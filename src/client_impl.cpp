@@ -40,6 +40,10 @@
 #endif
 
 #include "d3des.hpp"
+#include "encoding/ext_desktop_size.hpp"
+#include "encoding/server_identity.hpp"
+#include "encoding/supported_encodings.hpp"
+#include "encoding/supported_messages.hpp"
 #include <filesystem>
 #include <iostream>
 #include <ranges>
@@ -85,17 +89,33 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor,
     , port_(port)
     , handler_(handler)
 {
-    frame_codecs_.push_back(std::make_unique<encoding::rre>());
-    frame_codecs_.push_back(std::make_unique<encoding::co_rre>());
-    frame_codecs_.push_back(std::make_unique<encoding::raw>());
-    frame_codecs_.push_back(std::make_unique<encoding::copy_rect>());
+    message_map_[proto::rfbFramebufferUpdate] =
+        std::bind(&client_impl::on_rfbFramebufferUpdate, this);
+    message_map_[proto::rfbSetColourMapEntries] =
+        std::bind(&client_impl::on_rfbSetColourMapEntries, this);
+    message_map_[proto::rfbBell]          = std::bind(&client_impl::on_rfbBell, this);
+    message_map_[proto::rfbServerCutText] = std::bind(&client_impl::on_rfbServerCutText, this);
+    message_map_[proto::rfbTextChat]      = std::bind(&client_impl::on_rfbTextChat, this);
+    message_map_[proto::rfbXvp]           = std::bind(&client_impl::on_rfbXvp, this);
+    message_map_[proto::rfbResizeFrameBuffer] =
+        std::bind(&client_impl::on_rfbResizeFrameBuffer, this);
+    message_map_[proto::rfbPalmVNCReSizeFrameBuffer] =
+        std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
 
+    codecs_.push_back(std::make_unique<encoding::raw>());
+    codecs_.push_back(std::make_unique<encoding::rre>());
+    codecs_.push_back(std::make_unique<encoding::co_rre>());
+    codecs_.push_back(std::make_unique<encoding::copy_rect>());
 
     codecs_.push_back(std::make_unique<encoding::x_cursor>());
     codecs_.push_back(std::make_unique<encoding::rich_cursor>());
     codecs_.push_back(std::make_unique<encoding::keyboard_led_state>());
     codecs_.push_back(std::make_unique<encoding::new_fb_size>());
     codecs_.push_back(std::make_unique<encoding::pointer_pos>());
+    codecs_.push_back(std::make_unique<encoding::server_identity>());
+    codecs_.push_back(std::make_unique<encoding::supported_encodings>());
+    codecs_.push_back(std::make_unique<encoding::ext_desktop_size>());
+    codecs_.push_back(std::make_unique<encoding::supported_messages>());
 }
 
 const libvnc::frame_buffer& client_impl::frame() const
@@ -117,34 +137,35 @@ void client_impl::start()
     boost::asio::co_spawn(
         strand_,
         [this, self = shared_from_this()]() -> boost::asio::awaitable<void> {
-            auto err = co_await async_connect_rfbserver();
-            handler_->on_connect(err);
-            if (err)
-                co_return;
-
-            boost::system::error_code ec;
-            auto remote_endp = socket_.remote_endpoint(ec);
-
-            try {
-                co_await server_message_loop();
-            }
-            catch (const boost::system::system_error& e) {
-                ec = e.code();
-                spdlog::error("Disconnect from the rbfserver [{}:{}] : {}",
-                              remote_endp.address().to_string(),
-                              remote_endp.port(),
-                              ec.message());
-            }
-            catch (const std::exception& e) {
-                spdlog::error("Disconnect from the rbfserver [{}:{}] : {}",
-                              remote_endp.address().to_string(),
-                              remote_endp.port(),
-                              e.what());
-            }
-            if (handler_)
-                handler_->on_disconnect(error::make_error(ec));
+            error err = co_await co_start();
         },
         boost::asio::detached);
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::co_start()
+{
+    error err = co_await async_connect_rfbserver();
+    handler_->on_connect(err);
+    if (err)
+        co_return err;
+
+    boost::system::error_code ec;
+    auto remote_endp = socket_.remote_endpoint(ec);
+
+    err = co_await server_message_loop();
+    if (err) {
+        spdlog::error("Disconnect from the rbfserver [{}:{}] : {}",
+                      remote_endp.address().to_string(),
+                      remote_endp.port(),
+                      ec.message());
+    }
+    handler_->on_disconnect(err);
+    co_return err;
+}
+
+int client_impl::current_keyboard_led_state() const
+{
+    return current_keyboard_led_state_;
 }
 
 void client_impl::send_framebuffer_update_request(int x, int y, int w, int h, bool incremental)
@@ -163,12 +184,14 @@ void client_impl::send_framebuffer_update_request(bool incremental)
     return send_framebuffer_update_request(0, 0, buffer_.width(), buffer_.width(), incremental);
 }
 
-std::vector<std::string> client_impl::supported_encodings() const
+std::vector<std::string> client_impl::supported_frame_encodings() const
 {
     std::vector<std::string> encs;
-    for (const auto& item : frame_codecs_)
+    for (const auto& item : codecs_) {
+        if (!item->is_frame_codec())
+            continue;
         encs.push_back(item->codec_name());
-
+    }
     return encs;
 }
 
@@ -288,17 +311,12 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
         co_return ec;
     }
 
-
-    try {
-        co_await async_client_init();
-    }
-    catch (const boost::system::system_error& e) {
-        ec = e.code();
-        spdlog::error("Failed to initialize the client: {}", ec.message());
+    if (auto err = co_await async_client_init(); err) {
+        spdlog::error("Failed to initialize the client: {}", err.message());
         co_return ec;
     }
 
-    co_return ec;
+    co_return error {};
 }
 
 boost::asio::awaitable<error> client_impl::async_authenticate()
@@ -396,7 +414,7 @@ boost::asio::awaitable<error> client_impl::async_client_init()
 {
     boost::system::error_code ec;
 
-    uint8_t shared = app_data_.shareDesktop ? 1 : 0;
+    uint8_t shared = share_desktop_ ? 1 : 0;
     co_await boost::asio::async_write(
         socket_, boost::asio::buffer(&shared, sizeof(shared)), net_awaitable[ec]);
     if (ec)
@@ -412,7 +430,7 @@ boost::asio::awaitable<error> client_impl::async_client_init()
         auto msg = fmt::format("Too big desktop name length sent by server: {} B > 1 MB",
                                (unsigned int)si.nameLength.value());
         spdlog::error(msg);
-        co_return custom_error {custom_error::client_init_error, msg};
+        co_return error::make_error(custom_error::client_init_error, msg);
     }
 
     std::string name;
@@ -431,23 +449,26 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     desktop_name_ = std::move(name);
 
     set_format(handler_->want_format());
-    set_encodings(supported_encodings());
+    set_frame_encodings(supported_frame_encodings());
 
     send_framebuffer_update_request(false);
+    co_return error {};
 }
 
 void client_impl::set_format(const proto::rfbPixelFormat& format)
 {
-    proto::rfbSetPixelFormatMsg spf {};
-    spf.pad1   = 0;
-    spf.pad2   = 0;
-    spf.format = format;
+    boost::asio::dispatch(strand_, [this, self = shared_from_this(), format]() {
+        proto::rfbSetPixelFormatMsg spf {};
+        spf.pad1   = 0;
+        spf.pad2   = 0;
+        spf.format = format;
 
-    if (send_msg_to_server(proto::rfbSetPixelFormat, &spf, sizeof(spf)))
-        buffer_.set_format(format);
+        if (send_msg_to_server(proto::rfbSetPixelFormat, &spf, sizeof(spf)))
+            buffer_.set_format(format);
+    });
 }
 
-void client_impl::set_encodings(const std::vector<std::string>& encodings)
+void client_impl::set_frame_encodings(const std::vector<std::string>& encodings)
 {
     boost::asio::dispatch(strand_, [this, self = shared_from_this(), encodings]() {
         std::vector<boost::endian::big_uint32_buf_t> encs;
@@ -455,32 +476,36 @@ void client_impl::set_encodings(const std::vector<std::string>& encodings)
         bool requestCompressLevel    = false;
         bool requestQualityLevel     = false;
         bool requestLastRectEncoding = false;
-        for (const auto& codec_name : encodings) {
-            auto iter = std::ranges::find_if(
-                frame_codecs_, [&](const auto& enc) { return enc->codec_name() == codec_name; });
-            if (iter == frame_codecs_.end())
-                continue;
-            encs.emplace_back((*iter)->encoding_code());
 
-            if ((*iter)->requestCompressLevel())
+        auto apply_codecs =
+            codecs_ | std::views::filter([&](const auto& enc) {
+                if (!enc->is_frame_codec())
+                    return true;
+
+                auto iter = std::ranges::find_if(
+                    encodings, [&](const auto& enc_name) { return enc->codec_name() == enc_name; });
+                return iter != encodings.end();
+            });
+
+        for (const auto& codec : apply_codecs) {
+            encs.emplace_back(codec->encoding_code());
+
+            if (codec->requestCompressLevel())
                 requestCompressLevel = true;
-            if ((*iter)->requestQualityLevel())
+            if (codec->requestQualityLevel())
                 requestQualityLevel = true;
-            if ((*iter)->requestLastRectEncoding())
+            if (codec->requestLastRectEncoding())
                 requestLastRectEncoding = true;
         }
 
         if (requestCompressLevel)
-            encs.emplace_back(app_data_.compressLevel + proto::rfbEncodingCompressLevel0);
+            encs.emplace_back(compress_level_ + proto::rfbEncodingCompressLevel0);
 
         if (requestQualityLevel)
-            encs.emplace_back(app_data_.qualityLevel + proto::rfbEncodingQualityLevel0);
+            encs.emplace_back(quality_level_ + proto::rfbEncodingQualityLevel0);
 
         if (requestLastRectEncoding)
             encs.emplace_back(proto::rfbEncodingLastRect);
-
-        for (const auto& enc : codecs_)
-            encs.emplace_back(enc->encoding_code());
 
 #ifdef LIBVNC_HAVE_LIBZ
         encs.emplace_back(proto::rfbEncodingExtendedClipboard);
@@ -501,54 +526,25 @@ void client_impl::set_encodings(const std::vector<std::string>& encodings)
     });
 }
 
-boost::asio::awaitable<void> client_impl::server_message_loop()
+boost::asio::awaitable<error> client_impl::server_message_loop()
 {
+    boost::system::error_code ec;
     for (;;) {
         proto::rfbServerToClientMsg msg_id {};
-        co_await boost::asio::async_read(socket_, boost::asio::buffer(&msg_id, sizeof(msg_id)));
+        co_await boost::asio::async_read(
+            socket_, boost::asio::buffer(&msg_id, sizeof(msg_id)), net_awaitable[ec]);
+        if (ec)
+            co_return error::make_error(ec);
 
-        switch (msg_id) {
-            case proto::rfbFramebufferUpdate: {
-                proto::rfbFramebufferUpdateMsg msg {};
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(&msg, sizeof(msg)));
-                co_await on_message(msg);
-            } break;
-            case proto::rfbSetColourMapEntries: break;
-            case proto::rfbBell: {
-                if (handler_)
-                    handler_->on_bell();
-            } break;
-            case proto::rfbServerCutText: {
-                proto::rfbServerCutTextMsg msg {};
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(&msg, sizeof(msg)));
-                co_await on_message(msg);
-            } break;
-            case proto::rfbTextChat: {
-                proto::rfbTextChatMsg msg {};
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(&msg, sizeof(msg)));
-                co_await on_message(msg);
-            } break;
-            case proto::rfbXvp: {
-                proto::rfbXvpMsg msg {};
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(&msg, sizeof(msg)));
-                co_await on_message(msg);
-            } break;
-            case proto::rfbResizeFrameBuffer: {
-                proto::rfbResizeFrameBufferMsg msg {};
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(&msg, sizeof(msg)));
-                co_await on_message(msg);
-
-            } break;
-            case proto::rfbPalmVNCReSizeFrameBuffer: {
-                proto::rfbPalmVNCReSizeFrameBufferMsg msg {};
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(&msg, sizeof(msg)));
-                co_await on_message(msg);
-            } break;
-            case proto::rfbServerState: break;
-            default: {
-                spdlog::error("Unknown message type {} from VNC server", (int)msg_id);
-            } break;
+        auto iter = message_map_.find(msg_id);
+        if (iter == message_map_.end()) {
+            spdlog::error("Unknown message type {} from VNC server", (int)msg_id);
+            co_return error::make_error(
+                boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type));
         }
+
+        if (auto err = co_await iter->second(); err)
+            co_return err;
     }
 }
 
@@ -662,40 +658,24 @@ void client_impl::send_raw_data(std::vector<uint8_t>&& data)
     });
 }
 
-
-encoding::codec* client_impl::find_encoding(const proto::rfbEncoding& encoding)
+void client_impl::HandleKeyboardLedState(int state)
 {
-    {
-        auto iter = std::ranges::find_if(
-            codecs_, [&](const auto& codec) { return codec->encoding_code() == encoding; });
-        if (iter != codecs_.end()) {
-            return iter->get();
-        }
-    }
+    if (current_keyboard_led_state_ == state)
+        return;
 
-    {
-        auto iter = std::ranges::find_if(
-            frame_codecs_, [&](const auto& codec) { return codec->encoding_code() == encoding; });
-        if (iter != frame_codecs_.end()) {
-            return iter->get();
-        }
-    }
-    return nullptr;
+    current_keyboard_led_state_ = state;
+    handler_->on_keyboard_led_state(state);
 }
 
-void client_impl::got_bitmap(const uint8_t* buffer, int x, int y, int w, int h)
+void client_impl::handle_server_identity(std::string_view text)
 {
-    buffer_.got_bitmap(buffer, x, y, w, h);
+    spdlog::info("Connected to Server \"{}\"", text);
 }
 
-void client_impl::got_copy_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y)
+void client_impl::handle_supported_messages(const proto::rfbSupportedMessages& messages)
 {
-    buffer_.got_copy_rect(src_x, src_y, w, h, dest_x, dest_y);
-}
-
-void client_impl::got_fill_rect(int x, int y, int w, int h, uint32_t colour)
-{
-    buffer_.got_fill_rect(x, y, w, h, colour);
+    supported_messages_.assign(messages);
+    supported_messages_.print();
 }
 
 void client_impl::resize_client_buffer(int width, int height)
@@ -706,76 +686,136 @@ void client_impl::resize_client_buffer(int width, int height)
     spdlog::info("Got new framebuffer size: {}x{}", width, height);
 }
 
-boost::asio::awaitable<void> client_impl::on_message(const proto::rfbFramebufferUpdateMsg& msg)
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
 {
+    boost::system::error_code ec;
+    proto::rfbFramebufferUpdateMsg msg {};
     proto::rfbFramebufferUpdateRectHeader UpdateRect {};
+
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+
     for (int i = 0; i < msg.num_rects.value(); ++i) {
-        co_await boost::asio::async_read(socket_,
-                                         boost::asio::buffer(&UpdateRect, sizeof(UpdateRect)));
+        co_await boost::asio::async_read(
+            socket_, boost::asio::buffer(&UpdateRect, sizeof(UpdateRect)), net_awaitable[ec]);
+        if (ec)
+            co_return error::make_error(ec);
 
         auto encoding = (proto::rfbEncoding)UpdateRect.encoding.value();
-        switch (encoding) {
-            case proto::rfbEncodingLastRect: co_return; break;
-            case proto::rfbEncodingExtDesktopSize: {
-                proto::rfbExtDesktopSizeMsg eds;
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(&eds, sizeof(eds)));
+        if (encoding == proto::rfbEncodingLastRect)
+            break;
 
-                rfbExtDesktopScreen screen;
-                auto screens = eds.numberOfScreens.value();
-                for (int loop = 0; loop < screens; loop++) {
-                    co_await boost::asio::async_read(socket_,
-                                                     boost::asio::buffer(&screen, sizeof(screen)));
-                }
 
-            } break;
-                /* rect.r.w=byte count */
-            case proto::rfbEncodingSupportedMessages: {
-                proto::rfbSupportedMessages supportedMessages = {0};
-                co_await boost::asio::async_read(
-                    socket_, boost::asio::buffer(&supportedMessages, sizeof(supportedMessages)));
-                supported_messages_.assign(supportedMessages);
-                supported_messages_.print();
-
-            } break;
-                /* rect.r.w=byte count, rect.r.h=# of encodings */
-            case proto::rfbEncodingSupportedEncodings: {
-                std::vector<uint8_t> buffer;
-                buffer.resize(UpdateRect.r.w.value());
-
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(buffer));
-
-                /* buffer now contains rect.r.h # of uint32_t encodings that the server supports */
-                /* currently ignored by this library */
-
-            } break;
-                /* rect.r.w=byte count */
-            case proto::rfbEncodingServerIdentity: {
-                std::string buffer;
-                buffer.resize(UpdateRect.r.w.value());
-
-                co_await boost::asio::async_read(socket_, boost::asio::buffer(buffer));
-
-                spdlog::info("Connected to Server \"{}\"", buffer);
-            } break;
-
-            default: {
-                auto enc = find_encoding((proto::rfbEncoding)UpdateRect.encoding.value());
-                if (!enc)
-                    throw;
-
-                co_await enc->decode(
-                    socket_, UpdateRect.r, buffer_.pixel_format(), shared_from_this());
-
-            } break;
+        auto iter = std::ranges::find_if(
+            codecs_, [&](const auto& codec) { return codec->encoding_code() == encoding; });
+        if (iter == codecs_.end()) {
+            co_return error::make_error(
+                boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type));
         }
+        const auto& codec = (*iter);
+
+        auto err = co_await codec->decode(socket_, UpdateRect.r, buffer_, shared_from_this());
+        if (err)
+            co_return err;
     }
-    if (handler_)
-        handler_->on_frame_update(buffer_);
+
+    handler_->on_frame_update(buffer_);
     send_framebuffer_update_request(true);
+    co_return error {};
 }
 
-boost::asio::awaitable<void> client_impl::on_message(const proto::rfbTextChatMsg& msg)
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbSetColourMapEntries()
 {
+    co_return error {};
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbBell()
+{
+    handler_->on_bell();
+    co_return error {};
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbServerCutText()
+{
+    boost::system::error_code ec;
+    proto::rfbServerCutTextMsg msg {};
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    int32_t ilen = msg.length.value();
+
+    ilen = ilen < 0 ? -ilen : ilen;
+
+    boost::asio::streambuf buffer;
+    co_await boost::asio::async_read(
+        socket_, buffer, boost::asio::transfer_exactly(ilen), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    std::istream input_stream(&buffer);
+    std::string text;
+#if defined(LIBVNC_HAVE_LIBZ)
+
+    boost::endian::big_uint32_buf_t flags {};
+    input_stream.read((char*)&flags, sizeof(flags));
+
+    /*
+     * only process (text | provide). Ignore all others
+     * modify here if need more types(rtf,html,dib,files)
+     */
+    if (!(flags.value() & proto::rfbExtendedClipboard_Text)) {
+        spdlog::info("rfbServerCutTextMsg. not text type. ignore");
+        co_return error {};
+    }
+    if (!(flags.value() & proto::rfbExtendedClipboard_Provide)) {
+        spdlog::info("rfbServerCutTextMsg. not provide type. ignore");
+        co_return error {};
+    }
+    if (flags.value() & proto::rfbExtendedClipboard_Caps) {
+        spdlog::info("rfbServerCutTextMsg. default cap.");
+        // client->extendedClipboardServerCapabilities |=
+        //     rfbExtendedClipboard_Text; /* for now, only text */
+        co_return error {};
+    }
+
+    boost::endian::big_uint32_buf_t size {};
+    zstr::istream zs(input_stream);
+    if (!zs.read((char*)&size, sizeof(size))) {
+        spdlog::error("rfbServerCutTextMsg. inflate size failed");
+        co_return error {};
+    }
+
+    if (size.value() > (1 << 20)) {
+        spdlog::error("rfbServerCutTextMsg. size too large");
+        co_return error {};
+    }
+    text.resize(size.value());
+    if (!zs.read(text.data(), text.size())) {
+        spdlog::error("rfbServerCutTextMsg. inflate buf failed");
+        co_return error {};
+    }
+#else
+    text.resize(ilen);
+    input_stream.read(text.data(), text.size());
+#endif
+    spdlog::info("Got server cut text: {}", std::filesystem::u8path(text).string());
+    co_return error {};
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbTextChat()
+{
+    boost::system::error_code ec;
+    proto::rfbTextChatMsg msg {};
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
     using namespace std::string_view_literals;
 
     switch (msg.length.value()) {
@@ -794,91 +834,56 @@ boost::asio::awaitable<void> client_impl::on_message(const proto::rfbTextChatMsg
         default: {
             std::string message;
             message.resize(msg.length.value());
-            co_await boost::asio::async_read(socket_, boost::asio::buffer(message));
+            co_await boost::asio::async_read(
+                socket_, boost::asio::buffer(message), net_awaitable[ec]);
+            if (ec)
+                co_return error::make_error(ec);
 
             spdlog::info("Received TextChat \"{}\"", message);
             handler_->on_text_chat(proto::rfbTextChatMessage, message);
         } break;
     }
-    co_return;
+    co_return error {};
 }
 
-boost::asio::awaitable<void> client_impl::on_message(const proto::rfbXvpMsg& msg)
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbXvp()
 {
+    boost::system::error_code ec;
+    proto::rfbXvpMsg msg {};
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
     supported_messages_.set_client2server(proto::rfbXvp);
     supported_messages_.set_server2client(proto::rfbXvp);
-    co_return;
+    co_return error {};
 }
 
-boost::asio::awaitable<void> client_impl::on_message(const proto::rfbResizeFrameBufferMsg& msg)
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbResizeFrameBuffer()
 {
+    boost::system::error_code ec;
+    proto::rfbResizeFrameBufferMsg msg {};
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
     resize_client_buffer(msg.framebufferWidth.value(), msg.framebufferHeight.value());
-    co_return;
+    co_return error {};
 }
 
-boost::asio::awaitable<void>
-client_impl::on_message(const proto::rfbPalmVNCReSizeFrameBufferMsg& msg)
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbPalmVNCReSizeFrameBuffer()
 {
+    boost::system::error_code ec;
+    proto::rfbPalmVNCReSizeFrameBufferMsg msg {};
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
     resize_client_buffer(msg.buffer_w.value(), msg.buffer_h.value());
-    co_return;
-}
-
-boost::asio::awaitable<void> client_impl::on_message(const proto::rfbServerCutTextMsg& msg)
-{
-    int32_t ilen = msg.length.value();
-
-    ilen = ilen < 0 ? -ilen : ilen;
-
-    boost::asio::streambuf buffer;
-    co_await boost::asio::async_read(socket_, buffer, boost::asio::transfer_exactly(ilen));
-    std::istream input_stream(&buffer);
-    std::string text;
-#if defined(LIBVNC_HAVE_LIBZ)
-
-    boost::endian::big_uint32_buf_t flags {};
-    input_stream.read((char*)&flags, sizeof(flags));
-
-    /*
-     * only process (text | provide). Ignore all others
-     * modify here if need more types(rtf,html,dib,files)
-     */
-    if (!(flags.value() & proto::rfbExtendedClipboard_Text)) {
-        spdlog::info("rfbServerCutTextMsg. not text type. ignore");
-        co_return;
-    }
-    if (!(flags.value() & proto::rfbExtendedClipboard_Provide)) {
-        spdlog::info("rfbServerCutTextMsg. not provide type. ignore");
-        co_return;
-    }
-    if (flags.value() & proto::rfbExtendedClipboard_Caps) {
-        spdlog::info("rfbServerCutTextMsg. default cap.");
-        // client->extendedClipboardServerCapabilities |=
-        //     rfbExtendedClipboard_Text; /* for now, only text */
-        co_return;
-    }
-
-    boost::endian::big_uint32_buf_t size {};
-    zstr::istream zs(input_stream);
-    if (!zs.read((char*)&size, sizeof(size))) {
-        spdlog::error("rfbServerCutTextMsg. inflate size failed");
-        co_return;
-    }
-
-    if (size.value() > (1 << 20)) {
-        spdlog::error("rfbServerCutTextMsg. size too large");
-        co_return;
-    }
-    text.resize(size.value());
-    if (!zs.read(text.data(), text.size())) {
-        spdlog::error("rfbServerCutTextMsg. inflate buf failed");
-        co_return;
-    }
-#else
-    text.resize(ilen);
-    input_stream.read(text.data(), text.size());
-#endif
-    spdlog::info("Got server cut text: {}", std::filesystem::u8path(text).string());
-    co_return;
+    co_return error {};
 }
 
 } // namespace libvnc

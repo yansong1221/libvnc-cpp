@@ -91,9 +91,24 @@ proto::rfbPixelFormat frame_buffer::pixel_format() const
     return format_;
 }
 
-const std::vector<uint8_t>& frame_buffer::data() const
+const uint8_t* frame_buffer::data() const
 {
-    return buffer_;
+    return buffer_.data();
+}
+
+uint8_t* frame_buffer::data()
+{
+    return buffer_.data();
+}
+
+std::size_t frame_buffer::size() const
+{
+    return buffer_.size();
+}
+
+uint8_t frame_buffer::bytes_per_pixel() const
+{
+    return format_.bitsPerPixel.value() / 8;
 }
 
 void frame_buffer::got_bitmap(const uint8_t* buffer, int x, int y, int w, int h)
@@ -111,7 +126,7 @@ void frame_buffer::got_bitmap(const uint8_t* buffer, int x, int y, int w, int h)
 
     int rs = w * BPP / 8, rs2 = width_ * BPP / 8;
     for (int j = ((x * (BPP / 8)) + (y * rs2)); j < (y + h) * rs2; j += rs2) {
-        memcpy(buffer_.data() + j, buffer, rs);
+        memcpy(data() + j, buffer, rs);
         buffer += rs;
     }
 }
@@ -131,15 +146,15 @@ void frame_buffer::got_copy_rect(int src_x, int src_y, int w, int h, int dest_x,
     switch (format_.bitsPerPixel.value()) {
         case 8:
             detail::copy_rect_from_rect<uint8_t>(
-                buffer_.data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
+                data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
             break;
         case 16:
             detail::copy_rect_from_rect<uint16_t>(
-                buffer_.data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
+                data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
             break;
         case 32:
             detail::copy_rect_from_rect<uint32_t>(
-                buffer_.data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
+                data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
             break;
         default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
     }
@@ -152,7 +167,7 @@ void frame_buffer::got_fill_rect(int x, int y, int w, int h, uint32_t colour)
         return;
     }
     auto fill_rect = [this]<typename T>(int x, int y, int w, int h, T colour) {
-        auto ptr = reinterpret_cast<T*>(buffer_.data());
+        auto ptr = reinterpret_cast<T*>(data());
         for (int j = y * width_; j < (y + h) * width_; j += width_)
             for (int i = x; i < x + w; i++)
                 ptr[j + i] = colour;

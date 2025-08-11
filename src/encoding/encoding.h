@@ -1,4 +1,6 @@
 #pragma once
+#include "libvnc-cpp/error.h"
+#include "libvnc-cpp/frame_buffer.h"
 #include "libvnc-cpp/proto.h"
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -8,35 +10,38 @@ namespace libvnc::encoding {
 class frame_op : public std::enable_shared_from_this<frame_op>
 {
 public:
-    virtual ~frame_op()                                                        = default;
-    virtual void got_bitmap(const uint8_t* buffer, int x, int y, int w, int h) = 0;
-    virtual void soft_cursor_lock_area(int x, int y, int w, int h) { }
-    virtual void got_copy_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y) = 0;
-    virtual void got_fill_rect(int x, int y, int w, int h, uint32_t colour)                = 0;
-    virtual void got_cursor_shape(int xhot, int yhot, int width, int height, int bytesPerPixel) { }
-    virtual void handle_cursor_pos(int x, int y) { }
-    virtual void resize_client_buffer(int width, int height) = 0;
+    virtual ~frame_op()                                            = default;
+    virtual void soft_cursor_lock_area(int x, int y, int w, int h) = 0;
+    virtual void
+    got_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask) = 0;
+    virtual void handle_cursor_pos(int x, int y)                                                = 0;
+    virtual void HandleKeyboardLedState(int state)                                              = 0;
+    virtual void send_framebuffer_update_request(bool incremental)                              = 0;
+    virtual void handle_server_identity(std::string_view text)                                  = 0;
+    virtual void handle_supported_messages(const proto::rfbSupportedMessages& messages)         = 0;
 };
 
 class codec
 {
 public:
-    virtual ~codec()                                                          = default;
-    virtual void reset()                                                      = 0;
-    virtual proto::rfbEncoding encoding_code() const                          = 0;
-    virtual boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
-                                                const proto::rfbRectangle& rect,
-                                                const proto::rfbPixelFormat& format,
-                                                std::shared_ptr<frame_op> op) = 0;
+    virtual ~codec()                                 = default;
+    virtual void reset()                             = 0;
+    virtual proto::rfbEncoding encoding_code() const = 0;
+    virtual std::string codec_name() const           = 0;
+    virtual bool is_frame_codec() const { return false; }
+    virtual boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
+                                                 const proto::rfbRectangle& rect,
+                                                 frame_buffer& buffer,
+                                                 std::shared_ptr<frame_op> op) = 0;
+    virtual bool requestLastRectEncoding() const { return false; }
+    virtual bool requestCompressLevel() const { return false; }
+    virtual bool requestQualityLevel() const { return false; }
 };
 
 class frame_codec : public codec
 {
 public:
-    virtual std::string codec_name() const = 0;
-    virtual bool requestLastRectEncoding() const { return false; }
-    virtual bool requestCompressLevel() const { return false; }
-    virtual bool requestQualityLevel() const { return false; }
+    bool is_frame_codec() const final { return true; }
 };
 
 } // namespace libvnc::encoding

@@ -9,7 +9,7 @@ class Widget : public QWidget, public libvnc::client_delegate
     Q_OBJECT
 
 public:
-    Widget(boost::asio::io_context& ioc, QWidget* parent = nullptr);
+    Widget(QWidget* parent = nullptr);
     ~Widget();
 
 protected:
@@ -21,6 +21,7 @@ protected:
     void paintEvent(QPaintEvent*) override;
 
 private:
+    boost::asio::io_context ioc_;
     libvnc::client client_;
     QImage image_;
 };

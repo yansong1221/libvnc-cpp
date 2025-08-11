@@ -1,5 +1,6 @@
 #pragma once
 #include "encoding.h"
+#include "use_awaitable.hpp"
 #include <boost/asio/read.hpp>
 #include <boost/asio/streambuf.hpp>
 
@@ -12,15 +13,17 @@ public:
     std::string codec_name() const override { return "raw"; }
     proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRaw; }
 
-    boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
-                                        const proto::rfbRectangle& rect,
-                                        const proto::rfbPixelFormat& format,
-                                        std::shared_ptr<frame_op> op) override
+    boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
+                                         const proto::rfbRectangle& rect,
+                                         frame_buffer& buffer,
+                                         std::shared_ptr<frame_op> op) override
     {
+        boost::system::error_code ec;
+
         int y = rect.y.value();
         int h = rect.h.value();
 
-        auto bytesPerLine = rect.w.value() * format.bitsPerPixel.value() / 8;
+        auto bytesPerLine = rect.w.value() * buffer.pixel_format().bitsPerPixel.value() / 8;
 
         /* RealVNC 4.x-5.x on OSX can induce bytesPerLine==0,
            usually during GPU accel. */
@@ -32,20 +35,25 @@ public:
                 linesToRead = h;
 
             auto bytes = co_await boost::asio::async_read(
-                socket, buffer_, boost::asio::transfer_exactly(bytesPerLine * linesToRead));
+                socket,
+                buffer_,
+                boost::asio::transfer_exactly(bytesPerLine * linesToRead),
+                net_awaitable[ec]);
+            if (ec)
+                co_return error::make_error(ec);
 
-            op->got_bitmap((const uint8_t*)buffer_.data().data(),
-                           rect.x.value(),
-                           y,
-                           rect.w.value(),
-                           linesToRead);
+            buffer.got_bitmap((const uint8_t*)buffer_.data().data(),
+                              rect.x.value(),
+                              y,
+                              rect.w.value(),
+                              linesToRead);
 
             h -= linesToRead;
             y += linesToRead;
 
             buffer_.consume(bytes);
         }
-        co_return true;
+        co_return error {};
     }
 
 private:

@@ -8,18 +8,20 @@ class new_fb_size : public codec
 {
 public:
     void reset() override { }
+    std::string codec_name() const override { return "new-fb-size"; }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingNewFBSize;
     }
 
-    boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
-                                        const proto::rfbRectangle& rect,
-                                        const proto::rfbPixelFormat& format,
-                                        std::shared_ptr<frame_op> op) override
+    boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
+                                         const proto::rfbRectangle& rect,
+                                         frame_buffer& buffer,
+                                         std::shared_ptr<frame_op> op) override
     {
-        op->resize_client_buffer(rect.x.value(), rect.y.value());
-        co_return true;
+        buffer.set_size(rect.x.value(), rect.y.value());
+        op->send_framebuffer_update_request(false);
+        co_return error {};
     }
 };
 } // namespace libvnc::encoding

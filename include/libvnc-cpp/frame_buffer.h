@@ -14,7 +14,12 @@ public:
     int width() const;
     int height() const;
     proto::rfbPixelFormat pixel_format() const;
-    const std::vector<uint8_t>& data() const;
+
+    const uint8_t* data() const;
+    uint8_t* data();
+    std::size_t size() const;
+
+    uint8_t bytes_per_pixel() const;
 
     void got_bitmap(const uint8_t* buffer, int x, int y, int w, int h);
     void got_copy_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y);
@@ -27,7 +32,7 @@ private:
 private:
     std::atomic<int> width_  = 0;
     std::atomic<int> height_ = 0;
-    std::vector<uint8_t> buffer_;
     proto::rfbPixelFormat format_;
+    std::vector<uint8_t> buffer_;
 };
 } // namespace libvnc

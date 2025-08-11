@@ -8,18 +8,19 @@ class pointer_pos : public codec
 {
 public:
     void reset() override { }
+    std::string codec_name() const override { return "pointer-pos"; }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingPointerPos;
     }
 
-    boost::asio::awaitable<bool> decode(boost::asio::ip::tcp::socket& socket,
-                                        const proto::rfbRectangle& rect,
-                                        const proto::rfbPixelFormat& format,
-                                        std::shared_ptr<frame_op> op) override
+    boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
+                                         const proto::rfbRectangle& rect,
+                                         frame_buffer& buffer,
+                                         std::shared_ptr<frame_op> op) override
     {
         op->handle_cursor_pos(rect.x.value(), rect.y.value());
-        co_return true;
+        co_return error {};
     }
 };
 } // namespace libvnc::encoding

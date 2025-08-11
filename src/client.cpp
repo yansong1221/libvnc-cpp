@@ -72,6 +72,31 @@ void client::close()
     impl_->close();
 }
 
+void client::set_host(std::string_view host)
+{
+    impl_->host_ = host;
+}
+
+void client::set_port(int port)
+{
+    impl_->port_ = port;
+}
+
+void client::set_share_desktop(bool share)
+{
+    impl_->share_desktop_ = share;
+}
+
+void client::set_compress_level(int level)
+{
+    impl_->compress_level_ = std::clamp(level, 0, 9);
+}
+
+void client::set_quality_level(int level)
+{
+    impl_->quality_level_ = std::clamp(level, 0, 9);
+}
+
 const frame_buffer& client::frame() const
 {
     return impl_->frame();
@@ -93,5 +118,10 @@ void client::send_key_event(uint32_t key, bool down)
     impl_->send_key_event(key, down);
 }
 
+
+int client::current_keyboard_led_state() const
+{
+    return impl_->current_keyboard_led_state();
+}
 
 } // namespace libvnc
