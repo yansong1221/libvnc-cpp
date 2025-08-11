@@ -33,10 +33,7 @@ class client_impl;
 class client
 {
 public:
-    client(boost::asio::io_context& executor,
-           client_delegate* handler,
-           std::string_view host,
-           uint16_t port = 5900);
+    client(boost::asio::io_context& executor, client_delegate* handler);
     virtual ~client();
 
 public:

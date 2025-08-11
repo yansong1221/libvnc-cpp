@@ -19,10 +19,7 @@ namespace libvnc {
 class client_impl : public encoding::frame_op
 {
 public:
-    client_impl(const boost::asio::any_io_executor& executor,
-                client_delegate* handler,
-                std::string_view host,
-                uint16_t port);
+    client_impl(const boost::asio::any_io_executor& executor, client_delegate* handler);
 
 public:
     const frame_buffer& frame() const;

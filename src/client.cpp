@@ -49,11 +49,8 @@ void client_delegate::on_text_chat(const proto::rfbTextChatType& type, std::stri
     return;
 }
 
-client::client(boost::asio::io_context& executor,
-               client_delegate* handler,
-               std::string_view host,
-               uint16_t port /*= 5900*/)
-    : impl_(std::make_shared<client_impl>(executor.get_executor(), handler, host, port))
+client::client(boost::asio::io_context& executor, client_delegate* handler)
+    : impl_(std::make_shared<client_impl>(executor.get_executor(), handler))
 {
 }
 

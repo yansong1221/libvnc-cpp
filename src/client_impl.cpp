@@ -78,15 +78,10 @@ static void rfbEncryptBytes(uint8_t* challenge, const char* passwd)
 
 } // namespace detail
 
-client_impl::client_impl(const boost::asio::any_io_executor& executor,
-                         client_delegate* handler,
-                         std::string_view host,
-                         uint16_t port)
+client_impl::client_impl(const boost::asio::any_io_executor& executor, client_delegate* handler)
     : strand_(executor)
     , socket_(executor)
     , resolver_(executor)
-    , host_(host)
-    , port_(port)
     , handler_(handler)
 {
     message_map_[proto::rfbFramebufferUpdate] =
@@ -102,8 +97,8 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor,
     message_map_[proto::rfbPalmVNCReSizeFrameBuffer] =
         std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
 
-    codecs_.push_back(std::make_unique<encoding::rre>());
     codecs_.push_back(std::make_unique<encoding::raw>());
+    codecs_.push_back(std::make_unique<encoding::rre>());
     codecs_.push_back(std::make_unique<encoding::co_rre>());
     codecs_.push_back(std::make_unique<encoding::copy_rect>());
 
