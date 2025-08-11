@@ -145,6 +145,8 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
     if (err)
         co_return err;
 
+    is_initialization_completed_ = true;
+
     boost::system::error_code ec;
     auto remote_endp = socket_.remote_endpoint(ec);
 
@@ -443,8 +445,7 @@ boost::asio::awaitable<error> client_impl::async_client_init()
 
     buffer_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
 
-    desktop_name_                = std::move(name);
-    is_initialization_completed_ = true;
+    desktop_name_ = std::move(name);
 
     set_format(handler_->want_format());
     set_frame_encodings(supported_frame_encodings());
