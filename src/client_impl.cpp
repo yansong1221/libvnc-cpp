@@ -180,7 +180,7 @@ void client_impl::send_framebuffer_update_request(int x, int y, int w, int h, bo
 
 void client_impl::send_framebuffer_update_request(bool incremental)
 {
-    return send_framebuffer_update_request(0, 0, buffer_.width(), buffer_.width(), incremental);
+    return send_framebuffer_update_request(0, 0, buffer_.width(), buffer_.height(), incremental);
 }
 
 std::vector<std::string> client_impl::supported_frame_encodings() const
