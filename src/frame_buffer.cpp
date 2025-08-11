@@ -188,6 +188,7 @@ void frame_buffer::malloc_frame_buffer()
         SIZE_MAX is the maximum value that can fit into size_t
        */
     auto allocSize = (uint64_t)width_ * height_ * format_.bitsPerPixel.value() / 8;
+    buffer_.clear();
     buffer_.resize(allocSize, 0);
 }
 

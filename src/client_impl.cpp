@@ -100,8 +100,8 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor, client_de
         std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
 
     codecs_.push_back(std::make_unique<encoding::ultra>());
-    codecs_.push_back(std::make_unique<encoding::raw>());
     codecs_.push_back(std::make_unique<encoding::rre>());
+    codecs_.push_back(std::make_unique<encoding::raw>());
     codecs_.push_back(std::make_unique<encoding::co_rre>());
     codecs_.push_back(std::make_unique<encoding::copy_rect>());
 
@@ -557,21 +557,6 @@ boost::asio::awaitable<error> client_impl::server_message_loop()
     }
 }
 
-boost::asio::awaitable<void> client_impl::send_framebuffer_update_loop()
-{
-    using namespace std::chrono_literals;
-    boost::asio::steady_timer timer(strand_);
-    boost::system::error_code ec;
-    for (;;) {
-        timer.expires_after(16ms);
-        co_await timer.async_wait(net_awaitable[ec]);
-        if (ec)
-            co_return;
-
-        // send_framebuffer_update_request(true);
-    }
-}
-
 boost::asio::awaitable<error> client_impl::read_auth_result()
 {
     boost::system::error_code ec;
@@ -738,12 +723,11 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
         if (encoding == proto::rfbEncodingLastRect)
             break;
 
-
         auto iter = std::ranges::find_if(
             codecs_, [&](const auto& codec) { return codec->encoding_code() == encoding; });
         if (iter == codecs_.end()) {
-            co_return error::make_error(
-                boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type));
+            co_return error::make_error(custom_error::frame_error,
+                                        fmt::format("Unsupported encoding: {}", (int)encoding));
         }
         const auto& codec = (*iter);
 

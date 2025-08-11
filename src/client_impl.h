@@ -48,7 +48,6 @@ private:
     boost::asio::awaitable<error> async_client_init();
 
     boost::asio::awaitable<error> server_message_loop();
-    boost::asio::awaitable<void> send_framebuffer_update_loop();
 
     boost::asio::awaitable<error> read_auth_result();
     boost::asio::awaitable<error> read_error_reason();
