@@ -69,6 +69,11 @@ void client::close()
     impl_->close();
 }
 
+void client::set_delegate(client_delegate* handler)
+{
+
+}
+
 void client::set_host(std::string_view host)
 {
     impl_->host_ = host;

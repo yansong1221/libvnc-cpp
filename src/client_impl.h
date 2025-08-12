@@ -29,6 +29,8 @@ public:
     void start();
     boost::asio::awaitable<error> co_start();
 
+    void set_delegate(client_delegate* handler);
+
     int current_keyboard_led_state() const;
 
     void set_format(const proto::rfbPixelFormat& format);

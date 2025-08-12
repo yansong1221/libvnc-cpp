@@ -40,6 +40,8 @@ public:
     void start();
     void close();
 
+    void set_delegate(client_delegate* handler);
+
     void set_host(std::string_view host);
     void set_port(int port);
     void set_share_desktop(bool share);

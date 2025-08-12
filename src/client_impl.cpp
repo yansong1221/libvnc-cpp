@@ -145,28 +145,23 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
     is_initialization_completed_ = false;
 
     error err = co_await async_connect_rfbserver();
-    handler_->on_connect(err);
+    if (handler_)
+        handler_->on_connect(err);
     if (err)
         co_return err;
 
     is_initialization_completed_ = true;
 
-    set_format(handler_->want_format());
+    if (handler_)
+        set_format(handler_->want_format());
+
     set_frame_encodings(supported_frame_encodings());
     send_framebuffer_update_request(false);
 
     boost::system::error_code ec;
     auto remote_endp = socket_.remote_endpoint(ec);
 
-    // using namespace boost::asio::experimental::awaitable_operators;
     err = co_await server_message_loop();
-    // std::visit(
-    //     [&](auto&& arg) {
-    //         using value_type = std::decay_t<decltype(arg)>;
-    //         if constexpr (std::same_as<value_type, error>)
-    //             err = arg;
-    //     },
-    //     result);
     if (err) {
         spdlog::error("Disconnect from the rbfserver [{}:{}] : {}",
                       remote_endp.address().to_string(),
@@ -174,8 +169,16 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
                       err.message());
     }
     is_initialization_completed_ = false;
-    handler_->on_disconnect(err);
+
+    if (handler_)
+        handler_->on_disconnect(err);
     co_return err;
+}
+
+void client_impl::set_delegate(client_delegate* handler)
+{
+    boost::asio::dispatch(strand_,
+                          [this, self = shared_from_this(), handler]() { handler_ = handler; });
 }
 
 int client_impl::current_keyboard_led_state() const
@@ -349,8 +352,8 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
         co_await boost::asio::async_read(socket_, boost::asio::buffer(tAuth), net_awaitable[ec]);
         if (ec)
             co_return ec;
-
-        selected_auth_scheme = handler_->select_auth_scheme({tAuth.begin(), tAuth.end()});
+        if (handler_)
+            selected_auth_scheme = handler_->select_auth_scheme({tAuth.begin(), tAuth.end()});
         co_await boost::asio::async_write(
             socket_, boost::asio::buffer(&selected_auth_scheme, 1), net_awaitable[ec]);
         if (ec)
@@ -388,8 +391,10 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
             if (ec)
                 co_return ec;
 
-            auto password = handler_->get_auth_password();
-            detail::rfbEncryptBytes(challenge.data(), password.c_str());
+            if (handler_) {
+                auto password = handler_->get_auth_password();
+                detail::rfbEncryptBytes(challenge.data(), password.c_str());
+            }
 
             co_await boost::asio::async_write(
                 socket_, boost::asio::buffer(challenge), net_awaitable[ec]);
@@ -679,7 +684,9 @@ void client_impl::HandleKeyboardLedState(int state)
         return;
 
     current_keyboard_led_state_ = state;
-    handler_->on_keyboard_led_state(state);
+
+    if (handler_)
+        handler_->on_keyboard_led_state(state);
 }
 
 void client_impl::handle_server_identity(std::string_view text)
@@ -735,8 +742,10 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
         if (err)
             co_return err;
 
-        if (codec->is_frame_codec())
-            handler_->on_frame_update(buffer_);
+        if (codec->is_frame_codec()) {
+            if (handler_)
+                handler_->on_frame_update(buffer_);
+        }
     }
     send_framebuffer_update_request(true);
     co_return error {};
@@ -749,7 +758,8 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbSetColourMapEntries()
 
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbBell()
 {
-    handler_->on_bell();
+    if (handler_)
+        handler_->on_bell();
     co_return error {};
 }
 
@@ -836,15 +846,18 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbTextChat()
     switch (msg.length.value()) {
         case proto::rfbTextChatOpen: {
             spdlog::info("Received TextChat Open");
-            handler_->on_text_chat(proto::rfbTextChatOpen, ""sv);
+            if (handler_)
+                handler_->on_text_chat(proto::rfbTextChatOpen, ""sv);
         } break;
         case proto::rfbTextChatClose: {
             spdlog::info("Received TextChat Close");
-            handler_->on_text_chat(proto::rfbTextChatClose, ""sv);
+            if (handler_)
+                handler_->on_text_chat(proto::rfbTextChatClose, ""sv);
         } break;
         case proto::rfbTextChatFinished: {
             spdlog::info("Received TextChat Finished");
-            handler_->on_text_chat(proto::rfbTextChatFinished, ""sv);
+            if (handler_)
+                handler_->on_text_chat(proto::rfbTextChatFinished, ""sv);
         } break;
         default: {
             std::string message;
@@ -855,7 +868,8 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbTextChat()
                 co_return error::make_error(ec);
 
             spdlog::info("Received TextChat \"{}\"", message);
-            handler_->on_text_chat(proto::rfbTextChatMessage, message);
+            if (handler_)
+                handler_->on_text_chat(proto::rfbTextChatMessage, message);
         } break;
     }
     co_return error {};
