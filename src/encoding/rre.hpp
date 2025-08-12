@@ -43,6 +43,7 @@ public:
 
         buffer.fill_rect(rx, ry, rw, rh, pix.data());
 
+
         for (std::size_t i = 0; i < nSubrects.value(); i++) {
             co_await boost::asio::async_read(socket, boost::asio::buffer(pix), net_awaitable[ec]);
             if (ec)

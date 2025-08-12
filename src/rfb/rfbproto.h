@@ -530,12 +530,6 @@ typedef struct {
  * the two bytes.
  */
 
-#define rfbHextileRaw			(1 << 0)
-#define rfbHextileBackgroundSpecified	(1 << 1)
-#define rfbHextileForegroundSpecified	(1 << 2)
-#define rfbHextileAnySubrects		(1 << 3)
-#define rfbHextileSubrectsColoured	(1 << 4)
-
 #define rfbHextilePackXY(x,y) (((x) << 4) | (y))
 #define rfbHextilePackWH(w,h) ((((w)-1) << 4) | ((h)-1))
 #define rfbHextileExtractX(byte) ((byte) >> 4)
