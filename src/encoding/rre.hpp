@@ -58,7 +58,7 @@ private:
         if (ec)
             co_return error::make_error(ec);
 
-        buffer.got_fill_rect(rx, ry, rw, rh, pix);
+        buffer.fill_rect(rx, ry, rw, rh, pix);
 
         for (int i = 0; i < nSubrects.value(); i++) {
             co_await boost::asio::async_read(
@@ -71,11 +71,11 @@ private:
             if (ec)
                 co_return error::make_error(ec);
 
-            buffer.got_fill_rect(rx + subrect.x.value(),
-                                 ry + subrect.y.value(),
-                                 subrect.w.value(),
-                                 subrect.h.value(),
-                                 pix);
+            buffer.fill_rect(rx + subrect.x.value(),
+                             ry + subrect.y.value(),
+                             subrect.w.value(),
+                             subrect.h.value(),
+                             pix);
         }
         co_return error {};
     }
@@ -136,7 +136,7 @@ private:
         if (ec)
             co_return error::make_error(ec);
 
-        buffer.got_fill_rect(rx, ry, rw, rh, pix);
+        buffer.fill_rect(rx, ry, rw, rh, pix);
 
         auto bytes = co_await boost::asio::async_read(
             socket,
@@ -146,19 +146,16 @@ private:
         if (ec)
             co_return error::make_error(ec);
 
-        auto ptr = static_cast<const uint8_t*>(buffer_.data().data());
-
+        std::istream is(&buffer_);
+        uint8_t x, y, w, h;
         for (int i = 0; i < nSubrects.value(); i++) {
-            pix = *(PixType*)ptr;
-            ptr += sizeof(PixType);
-            auto x = *ptr++;
-            auto y = *ptr++;
-            auto w = *ptr++;
-            auto h = *ptr++;
-
-            buffer.got_fill_rect(rx + x, ry + y, w, h, pix);
+            is.read((char*) & pix, sizeof(pix));
+            is.read((char*)&x, sizeof(x));
+            is.read((char*)&y, sizeof(y));
+            is.read((char*)&w, sizeof(w));
+            is.read((char*)&h, sizeof(h));
+            buffer.fill_rect(rx + x, ry + y, w, h, pix);
         }
-        buffer_.consume(bytes);
         co_return error {};
     }
 

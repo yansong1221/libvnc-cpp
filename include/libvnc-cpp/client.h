@@ -27,6 +27,9 @@ public:
     virtual void on_text_chat(const proto::rfbTextChatType& type, std::string_view message);
     virtual void on_frame_update(const frame_buffer&) = 0;
     virtual void on_keyboard_led_state(int state) { }
+
+    virtual void on_cut_text_utf8(std::string_view message) { }
+    virtual void on_cut_text(std::string_view message) { }
 };
 
 class client_impl;

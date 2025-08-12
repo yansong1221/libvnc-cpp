@@ -22,22 +22,25 @@ public:
                                          frame_buffer& buffer,
                                          std::shared_ptr<frame_op> op) override
     {
+        if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
+            co_return err;
+
         boost::system::error_code ec;
         proto::rfbCopyRect cr {};
         co_await boost::asio::async_read(
             socket, boost::asio::buffer(&cr, sizeof(cr)), net_awaitable[ec]);
         if (ec)
-            co_return ec;
+            co_return error::make_error(ec);
 
         op->soft_cursor_lock_area(cr.srcX.value(), cr.srcY.value(), rect.w.value(), rect.h.value());
 
-        buffer.got_copy_rect(cr.srcX.value(),
+        buffer.copy_rect(cr.srcX.value(),
                              cr.srcY.value(),
                              rect.w.value(),
                              rect.h.value(),
                              rect.x.value(),
                              rect.y.value());
-        co_return ec;
+        co_return error::make_error(ec);
     }
 };
 } // namespace libvnc::encoding

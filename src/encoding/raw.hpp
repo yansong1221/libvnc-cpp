@@ -18,6 +18,9 @@ public:
                                          frame_buffer& buffer,
                                          std::shared_ptr<frame_op> op) override
     {
+        if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
+            co_return err;
+
         boost::system::error_code ec;
 
         int y = rect.y.value();

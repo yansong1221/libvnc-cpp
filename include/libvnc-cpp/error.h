@@ -42,8 +42,6 @@ class error
 {
 public:
     error() = default;
-    error(const boost::system::error_code& system_err);
-    error(const custom_error& custom_err);
 
     int value() const noexcept;
 
@@ -57,6 +55,10 @@ public:
 public:
     static error make_error(custom_error::code c, std::string msg);
     static error make_error(const boost::system::error_code& ec);
+
+protected:
+    error(const boost::system::error_code& system_err);
+    error(const custom_error& custom_err);
 
 private:
     std::variant<boost::system::error_code, custom_error> error_;

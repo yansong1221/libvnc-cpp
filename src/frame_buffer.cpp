@@ -3,51 +3,6 @@
 
 namespace libvnc {
 
-namespace detail {
-
-template<typename T>
-void copy_rect_from_rect(uint8_t* frame_buffer,
-                         int frame_w,
-                         int frame_h,
-                         int src_x,
-                         int src_y,
-                         int w,
-                         int h,
-                         int dest_x,
-                         int dest_y)
-{
-    T* _buffer = ((T*)frame_buffer) + (src_y - dest_y) * frame_w + src_x - dest_x;
-    if (dest_y < src_y) {
-        for (int j = dest_y * frame_w; j < (dest_y + h) * frame_w; j += frame_w) {
-            if (dest_x < src_x) {
-                for (int i = dest_x; i < dest_x + w; i++) {
-                    ((T*)frame_buffer)[j + i] = _buffer[j + i];
-                }
-            }
-            else {
-                for (int i = dest_x + w - 1; i >= dest_x; i--) {
-                    ((T*)frame_buffer)[j + i] = _buffer[j + i];
-                }
-            }
-        }
-    }
-    else {
-        for (int j = (dest_y + h - 1) * frame_w; j >= dest_y * frame_w; j -= frame_w) {
-            if (dest_x < src_x) {
-                for (int i = dest_x; i < dest_x + w; i++) {
-                    ((T*)frame_buffer)[j + i] = _buffer[j + i];
-                }
-            }
-            else {
-                for (int i = dest_x + w - 1; i >= dest_x; i--) {
-                    ((T*)frame_buffer)[j + i] = _buffer[j + i];
-                }
-            }
-        }
-    }
-}
-} // namespace detail
-
 void frame_buffer::init(int w, int h, const proto::rfbPixelFormat& format)
 {
     width_  = w;
@@ -93,22 +48,38 @@ proto::rfbPixelFormat frame_buffer::pixel_format() const
 
 const uint8_t* frame_buffer::data() const
 {
-    return buffer_.data();
+    return data_.data();
 }
 
 uint8_t* frame_buffer::data()
 {
-    return buffer_.data();
+    return data_.data();
+}
+
+const uint8_t* frame_buffer::data(int x, int y) const
+{
+    return const_cast<frame_buffer*>(this)->data(x, y);
+}
+
+uint8_t* frame_buffer::data(int x, int y)
+{
+    size_t offset = std::size_t(y * width_ + x) * bytes_per_pixel();
+    return data_.data() + offset;
 }
 
 std::size_t frame_buffer::size() const
 {
-    return buffer_.size();
+    return data_.size();
 }
 
 uint8_t frame_buffer::bytes_per_pixel() const
 {
     return format_.bitsPerPixel.value() / 8;
+}
+
+std::size_t frame_buffer::bytes_per_line() const
+{
+    return (std::size_t)width_ * bytes_per_pixel();
 }
 
 void frame_buffer::got_bitmap(const uint8_t* buffer, int x, int y, int w, int h)
@@ -117,21 +88,15 @@ void frame_buffer::got_bitmap(const uint8_t* buffer, int x, int y, int w, int h)
         spdlog::warn("Rect out of bounds: {}x{} at ({}, {})", x, y, w, h);
         return;
     }
+    std::size_t row_bytes = (std::size_t)w * bytes_per_pixel();
 
-    auto BPP = format_.bitsPerPixel.value();
-    if (BPP != 8 && BPP != 16 && BPP != 32) {
-        spdlog::warn("Unsupported bitsPerPixel: {}", BPP);
-        return;
-    }
-
-    int rs = w * BPP / 8, rs2 = width_ * BPP / 8;
-    for (int j = ((x * (BPP / 8)) + (y * rs2)); j < (y + h) * rs2; j += rs2) {
-        memcpy(data() + j, buffer, rs);
-        buffer += rs;
+    for (int i = 0; i < h; ++i) {
+        auto ptr = data(x, y + i);
+        std::memcpy(ptr, buffer + row_bytes * i, row_bytes);
     }
 }
 
-void frame_buffer::got_copy_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y)
+void frame_buffer::copy_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y)
 {
     if (!check_rect(src_x, src_y, w, h)) {
         spdlog::warn("Source rect out of bounds:{}x{} at ({}, {})", src_x, src_y, w, h);
@@ -143,41 +108,43 @@ void frame_buffer::got_copy_rect(int src_x, int src_y, int w, int h, int dest_x,
         return;
     }
 
-    switch (format_.bitsPerPixel.value()) {
-        case 8:
-            detail::copy_rect_from_rect<uint8_t>(
-                data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
-            break;
-        case 16:
-            detail::copy_rect_from_rect<uint16_t>(
-                data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
-            break;
-        case 32:
-            detail::copy_rect_from_rect<uint32_t>(
-                data(), width_, height_, src_x, src_y, w, h, dest_x, dest_y);
-            break;
-        default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
+    std::size_t row_bytes = (std::size_t)w * bytes_per_pixel();
+    std::size_t all_bytes = row_bytes * h;
+
+    std::vector<uint8_t> temp_buffer;
+    temp_buffer.resize(all_bytes);
+
+    for (int i = 0; i < h; ++i) {
+        auto ptr = data(src_x, src_y + i);
+        memcpy(temp_buffer.data() + row_bytes * i, ptr, row_bytes);
     }
+    got_bitmap(temp_buffer.data(), dest_x, dest_y, w, h);
 }
 
-void frame_buffer::got_fill_rect(int x, int y, int w, int h, uint32_t colour)
+void frame_buffer::fill_rect(int x, int y, int w, int h, uint32_t colour)
 {
     if (!check_rect(x, y, w, h)) {
         spdlog::warn("Rect out of bounds: {}x{} at ({}, {})", x, y, w, h);
         return;
     }
-    auto fill_rect = [this]<typename T>(int x, int y, int w, int h, T colour) {
-        auto ptr = reinterpret_cast<T*>(data());
-        for (int j = y * width_; j < (y + h) * width_; j += width_)
-            for (int i = x; i < x + w; i++)
-                ptr[j + i] = colour;
-    };
+    auto bpp = bytes_per_pixel();
 
-    switch (format_.bitsPerPixel.value()) {
-        case 8: fill_rect(x, y, w, h, (uint8_t)colour); break;
-        case 16: fill_rect(x, y, w, h, (uint16_t)colour); break;
-        case 32: fill_rect(x, y, w, h, (uint32_t)colour); break;
-        default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
+    for (int i = 0; i < h; ++i) {
+        auto ptr = data(x, y + i);
+        switch (bpp) {
+            case 1: {
+                std::fill(ptr, ptr + w, colour & 0xFF);
+            } break;
+            case 2: {
+                auto u16ptr = reinterpret_cast<uint16_t*>(ptr);
+                std::fill(u16ptr, u16ptr + w, colour & 0xFFFF);
+            } break;
+            case 4: {
+                auto u32ptr = reinterpret_cast<uint32_t*>(ptr);
+                std::fill(u32ptr, u32ptr + w, colour);
+            } break;
+            default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
+        }
     }
 }
 
@@ -188,12 +155,21 @@ void frame_buffer::malloc_frame_buffer()
         SIZE_MAX is the maximum value that can fit into size_t
        */
     auto allocSize = (uint64_t)width_ * height_ * format_.bitsPerPixel.value() / 8;
-    buffer_.clear();
-    buffer_.resize(allocSize, 0);
+    data_.resize(allocSize, 0);
+    data_.shrink_to_fit();
+}
+
+bool frame_buffer::check_overlap(int src_x, int src_y, int w, int h, int dest_x, int dest_y) const
+{
+    return !(src_x + w <= dest_x || src_x >= dest_x + w || src_y + h <= dest_y ||
+             src_y >= dest_y + h);
 }
 
 bool frame_buffer::check_rect(int x, int y, int w, int h) const
 {
+    if (x < 0 || y < 0)
+        return false;
+
     return x + w <= width_ && y + h <= height_;
 }
 

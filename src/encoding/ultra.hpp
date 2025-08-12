@@ -14,6 +14,7 @@ class ultra : public frame_codec
 public:
     void reset() override { buffer_.consume(buffer_.size()); }
     std::string codec_name() const override { return "ultra"; }
+    bool requestLastRectEncoding() const override { return true; }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingUltra;
@@ -24,6 +25,9 @@ public:
                                          frame_buffer& buffer,
                                          std::shared_ptr<frame_op> op) override
     {
+        if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
+            co_return err;
+
         boost::system::error_code ec;
         boost::endian::big_int32_buf_t nBytes {};
 
@@ -39,21 +43,20 @@ public:
             co_return error::make_error(custom_error::frame_error,
                                         "ultra error: remote sent negative payload size");
         }
-        int rx  = rect.x.value();
-        int ry  = rect.y.value();
-        int rw  = rect.w.value();
-        int rh  = rect.h.value();
-        int BPP = buffer.pixel_format().bitsPerPixel.value();
+        int rx         = rect.x.value();
+        int ry         = rect.y.value();
+        int rw         = rect.w.value();
+        int rh         = rect.h.value();
+        int byte_pixel = buffer.bytes_per_pixel();
 
-        lzo_uint uncompressedBytes = ((rw * rh) * (BPP / 8));
+        lzo_uint uncompressedBytes = ((rw * rh) * (byte_pixel));
         if (uncompressedBytes == 0) {
             co_return error::make_error(
                 custom_error::frame_error,
-                fmt::format(
-                    "ultra error: rectangle has 0 uncomressed bytes (({}w * {}h) * ({} / 8))",
-                    rw,
-                    rh,
-                    BPP));
+                fmt::format("ultra error: rectangle has 0 uncomressed bytes (({}w * {}h) * ({}))",
+                            rw,
+                            rh,
+                            byte_pixel));
         }
         co_await boost::asio::async_read(
             socket, buffer_, boost::asio::transfer_exactly(nBytes.value()), net_awaitable[ec]);
@@ -72,9 +75,9 @@ public:
                                                    nullptr);
 
         /* Note that uncompressedBytes will be 0 on output overrun */
-        if ((rw * rh * (BPP / 8)) != uncompressedBytes)
+        if ((rw * rh * byte_pixel) != uncompressedBytes)
             spdlog::warn("Ultra decompressed unexpected amount of data ({} != {})\n",
-                         (rw * rh * (BPP / 8)),
+                         (rw * rh * byte_pixel),
                          uncompressedBytes);
 
         /* Put the uncompressed contents of the update on the screen. */

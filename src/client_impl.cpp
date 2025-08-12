@@ -99,10 +99,11 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
         std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
 
     codecs_.push_back(std::make_unique<encoding::ultra>());
-    codecs_.push_back(std::make_unique<encoding::rre>());
-    codecs_.push_back(std::make_unique<encoding::raw>());
     codecs_.push_back(std::make_unique<encoding::co_rre>());
+    codecs_.push_back(std::make_unique<encoding::rre>());
     codecs_.push_back(std::make_unique<encoding::copy_rect>());
+    codecs_.push_back(std::make_unique<encoding::raw>());
+
 
     codecs_.push_back(std::make_unique<encoding::x_cursor>());
     codecs_.push_back(std::make_unique<encoding::rich_cursor>());
@@ -141,9 +142,12 @@ void client_impl::start()
 
 boost::asio::awaitable<libvnc::error> client_impl::co_start()
 {
+    boost::system::error_code ec;
     is_initialization_completed_ = false;
 
     error err = co_await async_connect_rfbserver();
+
+    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
     if (handler_)
         handler_->on_connect(err);
     if (err)
@@ -157,7 +161,7 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
     set_frame_encodings(supported_frame_encodings());
     send_framebuffer_update_request(false);
 
-    boost::system::error_code ec;
+
     auto remote_endp = socket_.remote_endpoint(ec);
 
     err = co_await server_message_loop();
@@ -169,6 +173,7 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
     }
     is_initialization_completed_ = false;
 
+    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
     if (handler_)
         handler_->on_disconnect(err);
     co_return err;
@@ -239,12 +244,12 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
         co_await resolver_.async_resolve(host_, std::to_string(port_), net_awaitable[ec]);
     if (ec) {
         spdlog::error("Failed to resolve [{}:{}] : {}", host_, port_, ec.message());
-        co_return ec;
+        co_return error::make_error(ec);
     }
     co_await boost::asio::async_connect(socket_, endpoints, net_awaitable[ec]);
     if (ec) {
         spdlog::error("Failed to connect rfbserver [{}:{}] : {}", host_, port_, ec.message());
-        co_return ec;
+        co_return error::make_error(ec);
     }
 
     // handshake
@@ -256,13 +261,14 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
     if (ec) {
         spdlog::error(
             "Failed to read rfbserver handshake data [{}:{}] : {}", host_, port_, ec.message());
-        co_return ec;
+        co_return error::make_error(ec);
     }
 
     int major, minor;
     if (sscanf(pv, proto::rfbProtocolVersionFormat, &major, &minor) != 2) {
         spdlog::error("Not a valid VNC server ({})", pv);
-        co_return boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type);
+        co_return error::make_error(
+            boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type));
     }
 
     major_ = major;
@@ -316,18 +322,18 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
     if (ec) {
         spdlog::error(
             "Failed to send rfbserver handshake data [{}:{}] : {}", host_, port_, ec.message());
-        co_return ec;
+        co_return error::make_error(ec);
     }
 
 
     if (auto err = co_await async_authenticate(); err) {
         spdlog::error("Authentication with the server failed: {}", err.message());
-        co_return ec;
+        co_return err;
     }
 
     if (auto err = co_await async_client_init(); err) {
         spdlog::error("Failed to initialize the client: {}", err.message());
-        co_return ec;
+        co_return err;
     }
 
     co_return error {};
@@ -345,18 +351,21 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
         co_await boost::asio::async_read(
             socket_, boost::asio::buffer(&count, sizeof(count)), net_awaitable[ec]);
         if (ec)
-            co_return ec;
+            co_return error::make_error(ec);
 
         std::vector<proto::rfbAuthScheme> tAuth(count);
         co_await boost::asio::async_read(socket_, boost::asio::buffer(tAuth), net_awaitable[ec]);
         if (ec)
-            co_return ec;
+            co_return error::make_error(ec);
+
+        co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
         if (handler_)
             selected_auth_scheme = handler_->select_auth_scheme({tAuth.begin(), tAuth.end()});
+
         co_await boost::asio::async_write(
             socket_, boost::asio::buffer(&selected_auth_scheme, 1), net_awaitable[ec]);
         if (ec)
-            co_return ec;
+            co_return error::make_error(ec);
     }
     else {
         boost::system::error_code ec;
@@ -364,7 +373,7 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
         co_await boost::asio::async_read(
             socket_, boost::asio::buffer(&authScheme, sizeof(authScheme)), net_awaitable[ec]);
         if (ec)
-            co_return ec;
+            co_return error::make_error(ec);
 
         selected_auth_scheme = static_cast<proto::rfbAuthScheme>(authScheme.value());
     }
@@ -378,7 +387,7 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
             if ((major_ == 3 && minor_ > 7) || major_ > 3)
                 co_return co_await read_auth_result();
             else
-                co_return boost::system::error_code {};
+                co_return error {};
 
         } break;
         case proto::rfbVncAuth: {
@@ -388,8 +397,9 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
             co_await boost::asio::async_read(
                 socket_, boost::asio::buffer(challenge), net_awaitable[ec]);
             if (ec)
-                co_return ec;
+                co_return error::make_error(ec);
 
+            co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
             if (handler_) {
                 auto password = handler_->get_auth_password();
                 detail::rfbEncryptBytes(challenge.data(), password.c_str());
@@ -398,7 +408,7 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
             co_await boost::asio::async_write(
                 socket_, boost::asio::buffer(challenge), net_awaitable[ec]);
             if (ec)
-                co_return ec;
+                co_return error::make_error(ec);
 
             co_return co_await read_auth_result();
 
@@ -421,9 +431,9 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
         case proto::rfbClientInitExtraMsgSupportNew: break;
         default: break;
     }
-    co_return custom_error {
+    co_return error::make_error(
         custom_error::auth_error,
-        fmt::format("Unimplemented authentication method: {}! ", (int)selected_auth_scheme)};
+        fmt::format("Unimplemented authentication method: {}! ", (int)selected_auth_scheme));
 }
 
 boost::asio::awaitable<error> client_impl::async_client_init()
@@ -434,13 +444,13 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     co_await boost::asio::async_write(
         socket_, boost::asio::buffer(&shared, sizeof(shared)), net_awaitable[ec]);
     if (ec)
-        co_return ec;
+        co_return error::make_error(ec);
 
     proto::rfbServerInitMsg si {};
     co_await boost::asio::async_read(
         socket_, boost::asio::buffer(&si, sizeof(si)), net_awaitable[ec]);
     if (ec)
-        co_return ec;
+        co_return error::make_error(ec);
 
     if (si.nameLength.value() > 1 << 20) {
         auto msg = fmt::format("Too big desktop name length sent by server: {} B > 1 MB",
@@ -453,7 +463,7 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     name.resize(si.nameLength.value());
     co_await boost::asio::async_read(socket_, boost::asio::buffer(name), net_awaitable[ec]);
     if (ec)
-        co_return ec;
+        co_return error::make_error(ec);
 
     spdlog::info("Desktop name \"{}\"", name);
     spdlog::info("Connected to VNC server, using protocol version {}.{}", major_, minor_);
@@ -568,12 +578,12 @@ boost::asio::awaitable<error> client_impl::read_auth_result()
     co_await boost::asio::async_read(
         socket_, boost::asio::buffer(&authResult, sizeof(authResult)), net_awaitable[ec]);
     if (ec)
-        co_return ec;
+        co_return error::make_error(ec);
 
     switch (authResult.value()) {
         case proto::rfbVncAuthOK: {
             spdlog::info("VNC authentication succeeded");
-            co_return ec;
+            co_return error {};
         } break;
         case proto::rfbVncAuthFailed: {
             if (major_ == 3 && minor_ > 7) {
@@ -684,8 +694,10 @@ void client_impl::HandleKeyboardLedState(int state)
 
     current_keyboard_led_state_ = state;
 
-    if (handler_)
-        handler_->on_keyboard_led_state(state);
+    boost::asio::dispatch(strand_, [this, self = shared_from_this()]() {
+        if (handler_)
+            handler_->on_keyboard_led_state(current_keyboard_led_state_);
+    });
 }
 
 void client_impl::handle_server_identity(std::string_view text)
@@ -740,13 +752,13 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
         auto err = co_await codec->decode(socket_, UpdateRect.r, buffer_, shared_from_this());
         if (err)
             co_return err;
-
-        if (codec->is_frame_codec()) {
-            if (handler_)
-                handler_->on_frame_update(buffer_);
-        }
     }
     send_framebuffer_update_request(true);
+
+    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
+    if (handler_)
+        handler_->on_frame_update(buffer_);
+
     co_return error {};
 }
 
@@ -757,6 +769,8 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbSetColourMapEntries()
 
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbBell()
 {
+    boost::system::error_code ec;
+    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
     if (handler_)
         handler_->on_bell();
     co_return error {};
@@ -823,9 +837,15 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbServerCutText()
         spdlog::error("rfbServerCutTextMsg. inflate buf failed");
         co_return error {};
     }
+    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
+    if (handler_)
+        handler_->on_cut_text_utf8(text);
 #else
     text.resize(ilen);
     input_stream.read(text.data(), text.size());
+    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
+    if (handler_)
+        handler_->on_cut_text(text);
 #endif
     spdlog::info("Got server cut text: {}", std::filesystem::u8path(text).string());
     co_return error {};
@@ -845,16 +865,19 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbTextChat()
     switch (msg.length.value()) {
         case proto::rfbTextChatOpen: {
             spdlog::info("Received TextChat Open");
+            co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
             if (handler_)
                 handler_->on_text_chat(proto::rfbTextChatOpen, ""sv);
         } break;
         case proto::rfbTextChatClose: {
             spdlog::info("Received TextChat Close");
+            co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
             if (handler_)
                 handler_->on_text_chat(proto::rfbTextChatClose, ""sv);
         } break;
         case proto::rfbTextChatFinished: {
             spdlog::info("Received TextChat Finished");
+            co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
             if (handler_)
                 handler_->on_text_chat(proto::rfbTextChatFinished, ""sv);
         } break;
@@ -867,6 +890,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbTextChat()
                 co_return error::make_error(ec);
 
             spdlog::info("Received TextChat \"{}\"", message);
+            co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
             if (handler_)
                 handler_->on_text_chat(proto::rfbTextChatMessage, message);
         } break;
