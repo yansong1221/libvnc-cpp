@@ -422,6 +422,17 @@ struct rfbPalmVNCReSizeFrameBufferMsg
     boost::endian::big_uint16_buf_t pad2;
 };
 
+enum rfbButtonMask
+{
+    rfbButton1Mask   = 1,
+    rfbButton2Mask   = 2,
+    rfbButton3Mask   = 4,
+    rfbButton4Mask   = 8,
+    rfbButton5Mask   = 16,
+    rfbWheelUpMask   = rfbButton4Mask, // RealVNC 335 method
+    rfbWheelDownMask = rfbButton5Mask
+};
+
 struct rfbPointerEventMsg
 {
     boost::endian::big_uint8_buf_t buttonMask; /* bits 0-7 are buttons 1-8, 0=up, 1=down */
