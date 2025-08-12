@@ -4,18 +4,20 @@
 
 Widget::Widget(QWidget* parent)
     : QWidget(parent)
-    , client_(ioc_, this)
+    , client_(ioc_)
 {
     auto timer = new QTimer(this);
     timer->setInterval(10);
     timer->start();
     connect(timer, &QTimer::timeout, this, [this]() { ioc_.poll(); });
     client_.set_host("127.0.0.1");
+    client_.set_delegate(this);
     client_.start();
 }
 
 Widget::~Widget()
 {
+    client_.set_delegate(nullptr);
 }
 
 void Widget::on_connect(const libvnc::error& ec)

@@ -11,16 +11,16 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/strand.hpp>
 #include <map>
+#include <queue>
 #include <set>
 #include <span>
-#include <queue>
 
 namespace libvnc {
 
 class client_impl : public encoding::frame_op
 {
 public:
-    client_impl(const boost::asio::any_io_executor& executor, client_delegate* handler);
+    client_impl(const boost::asio::any_io_executor& executor);
 
 public:
     const frame_buffer& frame() const;
@@ -108,7 +108,7 @@ public:
     /** negotiated protocol version */
     int major_ = proto::rfbProtocolMajorVersion, minor_ = proto::rfbProtocolMinorVersion;
 
-    client_delegate* handler_;
+    client_delegate* handler_ = nullptr;
     supported_messages supported_messages_;
 
     std::vector<std::unique_ptr<encoding::codec>> codecs_;

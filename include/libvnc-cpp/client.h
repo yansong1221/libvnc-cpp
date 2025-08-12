@@ -33,7 +33,7 @@ class client_impl;
 class client
 {
 public:
-    client(boost::asio::io_context& executor, client_delegate* handler);
+    client(boost::asio::io_context& executor);
     virtual ~client();
 
 public:

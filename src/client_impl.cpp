@@ -80,11 +80,10 @@ static void rfbEncryptBytes(uint8_t* challenge, const char* passwd)
 
 } // namespace detail
 
-client_impl::client_impl(const boost::asio::any_io_executor& executor, client_delegate* handler)
+client_impl::client_impl(const boost::asio::any_io_executor& executor)
     : strand_(executor)
     , socket_(executor)
     , resolver_(executor)
-    , handler_(handler)
 {
     message_map_[proto::rfbFramebufferUpdate] =
         std::bind(&client_impl::on_rfbFramebufferUpdate, this);
