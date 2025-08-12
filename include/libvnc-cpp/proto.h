@@ -422,7 +422,7 @@ struct rfbPalmVNCReSizeFrameBufferMsg
     boost::endian::big_uint16_buf_t pad2;
 };
 
-enum rfbButtonMask
+enum rfbButtonMask : uint8_t
 {
     rfbButton1Mask   = 1,
     rfbButton2Mask   = 2,

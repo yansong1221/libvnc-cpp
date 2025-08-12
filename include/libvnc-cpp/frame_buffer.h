@@ -29,7 +29,7 @@ public:
 
     void got_bitmap(const uint8_t* buffer, int x, int y, int w, int h);
     void copy_rect(int src_x, int src_y, int w, int h, int dest_x, int dest_y);
-    void fill_rect(int x, int y, int w, int h, uint32_t colour);
+    void fill_rect(int x, int y, int w, int h, const uint8_t* colour);
 
 private:
     void malloc_frame_buffer();

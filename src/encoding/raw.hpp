@@ -9,7 +9,7 @@ namespace libvnc::encoding {
 class raw : public frame_codec
 {
 public:
-    void reset() override { buffer_.consume(buffer_.size()); }
+    void reset() override { }
     std::string codec_name() const override { return "raw"; }
     proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRaw; }
 
@@ -23,43 +23,22 @@ public:
 
         boost::system::error_code ec;
 
+        int x = rect.x.value();
         int y = rect.y.value();
+        int w = rect.w.value();
         int h = rect.h.value();
 
-        auto bytesPerLine = rect.w.value() * buffer.bytes_per_pixel();
+        auto bytesPerLine = w * buffer.bytes_per_pixel();
 
-        /* RealVNC 4.x-5.x on OSX can induce bytesPerLine==0,
-           usually during GPU accel. */
-        /* Regardless of cause, do not divide by zero. */
-        auto linesToRead = bytesPerLine ? 1 : 0;
+        for (int i = 0; i < h; ++i) {
+            auto ptr = buffer.data(x, y + i);
 
-        while (linesToRead && h > 0) {
-            if (linesToRead > h)
-                linesToRead = h;
-
-            auto bytes = co_await boost::asio::async_read(
-                socket,
-                buffer_,
-                boost::asio::transfer_exactly(bytesPerLine * linesToRead),
-                net_awaitable[ec]);
+            co_await boost::asio::async_read(
+                socket, boost::asio::buffer(ptr, bytesPerLine), net_awaitable[ec]);
             if (ec)
                 co_return error::make_error(ec);
-
-            buffer.got_bitmap((const uint8_t*)buffer_.data().data(),
-                              rect.x.value(),
-                              y,
-                              rect.w.value(),
-                              linesToRead);
-
-            h -= linesToRead;
-            y += linesToRead;
-
-            buffer_.consume(bytes);
         }
         co_return error {};
     }
-
-private:
-    boost::asio::streambuf buffer_;
 };
 } // namespace libvnc::encoding

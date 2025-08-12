@@ -121,7 +121,7 @@ void frame_buffer::copy_rect(int src_x, int src_y, int w, int h, int dest_x, int
     got_bitmap(temp_buffer.data(), dest_x, dest_y, w, h);
 }
 
-void frame_buffer::fill_rect(int x, int y, int w, int h, uint32_t colour)
+void frame_buffer::fill_rect(int x, int y, int w, int h, const uint8_t* colour)
 {
     if (!check_rect(x, y, w, h)) {
         spdlog::warn("Rect out of bounds: {}x{} at ({}, {})", x, y, w, h);
@@ -133,15 +133,15 @@ void frame_buffer::fill_rect(int x, int y, int w, int h, uint32_t colour)
         auto ptr = data(x, y + i);
         switch (bpp) {
             case 1: {
-                std::fill(ptr, ptr + w, colour & 0xFF);
+                std::fill(ptr, ptr + w, *colour);
             } break;
             case 2: {
                 auto u16ptr = reinterpret_cast<uint16_t*>(ptr);
-                std::fill(u16ptr, u16ptr + w, colour & 0xFFFF);
+                std::fill(u16ptr, u16ptr + w, *reinterpret_cast<const uint16_t*>(colour));
             } break;
             case 4: {
                 auto u32ptr = reinterpret_cast<uint32_t*>(ptr);
-                std::fill(u32ptr, u32ptr + w, colour);
+                std::fill(u32ptr, u32ptr + w, *reinterpret_cast<const uint32_t*>(colour));
             } break;
             default: spdlog::warn("Unsupported bitsPerPixel: {}", format_.bitsPerPixel.value());
         }

@@ -35,11 +35,11 @@ public:
         op->soft_cursor_lock_area(cr.srcX.value(), cr.srcY.value(), rect.w.value(), rect.h.value());
 
         buffer.copy_rect(cr.srcX.value(),
-                             cr.srcY.value(),
-                             rect.w.value(),
-                             rect.h.value(),
-                             rect.x.value(),
-                             rect.y.value());
+                         cr.srcY.value(),
+                         rect.w.value(),
+                         rect.h.value(),
+                         rect.x.value(),
+                         rect.y.value());
         co_return error::make_error(ec);
     }
 };
