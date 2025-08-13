@@ -46,6 +46,7 @@
 #include "encoding/supported_encodings.hpp"
 #include "encoding/supported_messages.hpp"
 #include "encoding/ultra.hpp"
+#include "encoding/zlib.hpp"
 #include <boost/asio/experimental/awaitable_operators.hpp>
 #include <filesystem>
 #include <iostream>
@@ -99,13 +100,14 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
     message_map_[proto::rfbPalmVNCReSizeFrameBuffer] =
         std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
 
-
+    codecs_.push_back(std::make_unique<encoding::zlib>());
     codecs_.push_back(std::make_unique<encoding::ultra>());
+    codecs_.push_back(std::make_unique<encoding::ultra_zip>());
     codecs_.push_back(std::make_unique<encoding::copy_rect>());
-    codecs_.push_back(std::make_unique<encoding::raw>());
     codecs_.push_back(std::make_unique<encoding::co_rre>());
     codecs_.push_back(std::make_unique<encoding::rre>());
     codecs_.push_back(std::make_unique<encoding::hextile>());
+    codecs_.push_back(std::make_unique<encoding::raw>());
 
     codecs_.push_back(std::make_unique<encoding::x_cursor>());
     codecs_.push_back(std::make_unique<encoding::rich_cursor>());

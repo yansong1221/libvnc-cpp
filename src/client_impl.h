@@ -118,8 +118,8 @@ public:
     std::string host_   = "127.0.0.1";
     uint16_t port_      = 5900;
     bool share_desktop_ = true;
-    int compress_level_ = 3;
-    int quality_level_  = 5;
+    uint32_t compress_level_ = 3;
+    uint32_t quality_level_  = 5;
 
     frame_buffer frame_;
 
