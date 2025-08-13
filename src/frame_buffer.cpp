@@ -107,18 +107,24 @@ void frame_buffer::copy_rect(int src_x, int src_y, int w, int h, int dest_x, int
         spdlog::warn("Dest rect out of bounds: {}x{} at ({}, {})", dest_x, dest_y, w, h);
         return;
     }
+    bool overlap =
+        (dest_y > src_y) && (dest_y < src_y + h) && (dest_x < src_x + w) && (dest_x + w > src_x);
+    std::size_t block_row_bytes = (std::size_t)w * bytes_per_pixel();
 
-    std::size_t row_bytes = (std::size_t)w * bytes_per_pixel();
-    std::size_t all_bytes = row_bytes * h;
-
-    std::vector<uint8_t> temp_buffer;
-    temp_buffer.resize(all_bytes);
-
-    for (int i = 0; i < h; ++i) {
-        auto ptr = data(src_x, src_y + i);
-        memcpy(temp_buffer.data() + row_bytes * i, ptr, row_bytes);
+    if (overlap) {
+        for (int row = h - 1; row >= 0; --row) {
+            const uint8_t* src_ptr = data(src_x, src_y + row);
+            uint8_t* dst_ptr       = data(dest_x, dest_y + row);
+            std::memmove(dst_ptr, src_ptr, block_row_bytes);
+        }
     }
-    got_bitmap(temp_buffer.data(), dest_x, dest_y, w, h);
+    else {
+        for (int row = 0; row < h; ++row) {
+            const uint8_t* src_ptr = data(src_x, src_y + row);
+            uint8_t* dst_ptr       = data(dest_x, dest_y + row);
+            std::memmove(dst_ptr, src_ptr, block_row_bytes);
+        }
+    }
 }
 
 void frame_buffer::fill_rect(int x, int y, int w, int h, const uint8_t* colour)
@@ -157,12 +163,6 @@ void frame_buffer::malloc_frame_buffer()
     auto allocSize = (uint64_t)width_ * height_ * format_.bitsPerPixel.value() / 8;
     data_.resize(allocSize, 0);
     data_.shrink_to_fit();
-}
-
-bool frame_buffer::check_overlap(int src_x, int src_y, int w, int h, int dest_x, int dest_y) const
-{
-    return !(src_x + w <= dest_x || src_x >= dest_x + w || src_y + h <= dest_y ||
-             src_y >= dest_y + h);
 }
 
 bool frame_buffer::check_rect(int x, int y, int w, int h) const

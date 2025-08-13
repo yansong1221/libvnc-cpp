@@ -25,6 +25,8 @@ void Widget::on_connect(const libvnc::error& ec)
     if (ec.is_system_error()) {
         ec.value();
     }
+    client_.send_client_cut_text_utf8("111111111111");
+    //client_.send_frame_encodings({"hextile"});
 }
 
 void Widget::on_disconnect(const libvnc::error& ec)

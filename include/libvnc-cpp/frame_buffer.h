@@ -33,7 +33,6 @@ public:
 
 private:
     void malloc_frame_buffer();
-    bool check_overlap(int src_x, int src_y, int w, int h, int dest_x, int dest_y) const;
 
 private:
     std::atomic<int> width_  = 0;

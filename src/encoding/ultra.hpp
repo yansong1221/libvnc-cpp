@@ -12,7 +12,7 @@ namespace libvnc::encoding {
 class ultra : public frame_codec
 {
 public:
-    void reset() override { buffer_.consume(buffer_.size()); }
+    void reset() override { }
     std::string codec_name() const override { return "ultra"; }
     bool requestLastRectEncoding() const override { return true; }
     proto::rfbEncoding encoding_code() const override
@@ -58,8 +58,8 @@ public:
                             rh,
                             byte_pixel));
         }
-        co_await boost::asio::async_read(
-            socket, buffer_, boost::asio::transfer_exactly(nBytes.value()), net_awaitable[ec]);
+        buffer_.resize(nBytes.value());
+        co_await boost::asio::async_read(socket, boost::asio::buffer(buffer_), net_awaitable[ec]);
         if (ec)
             co_return error::make_error(ec);
 
@@ -68,11 +68,8 @@ public:
         }
         decompress_buffer_.resize(uncompressedBytes);
 
-        auto inflateResult = lzo1x_decompress_safe((uint8_t*)buffer_.data().data(),
-                                                   nBytes.value(),
-                                                   decompress_buffer_.data(),
-                                                   &uncompressedBytes,
-                                                   nullptr);
+        auto inflateResult = lzo1x_decompress_safe(
+            buffer_.data(), nBytes.value(), decompress_buffer_.data(), &uncompressedBytes, nullptr);
 
         /* Note that uncompressedBytes will be 0 on output overrun */
         if ((rw * rh * byte_pixel) != uncompressedBytes)
@@ -83,7 +80,6 @@ public:
         /* Put the uncompressed contents of the update on the screen. */
         if (inflateResult == LZO_E_OK) {
             buffer.got_bitmap(decompress_buffer_.data(), rx, ry, rw, rh);
-            buffer_.consume(nBytes.value());
         }
         else {
             co_return error::make_error(
@@ -94,7 +90,7 @@ public:
     }
 
 private:
-    boost::asio::streambuf buffer_;
+    std::vector<uint8_t> buffer_;
     std::vector<uint8_t> decompress_buffer_;
 };
 } // namespace libvnc::encoding

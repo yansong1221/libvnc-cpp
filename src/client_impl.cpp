@@ -148,20 +148,18 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
     is_initialization_completed_ = false;
 
     error err = co_await async_connect_rfbserver();
-
     co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
+    if (!err) {
+        is_initialization_completed_ = true;
+        if (handler_)
+            send_format(handler_->want_format());
+        send_frame_encodings(supported_frame_encodings());
+        send_framebuffer_update_request(false);
+    }
     if (handler_)
         handler_->on_connect(err);
     if (err)
         co_return err;
-
-    is_initialization_completed_ = true;
-
-    if (handler_)
-        set_format(handler_->want_format());
-
-    set_frame_encodings(supported_frame_encodings());
-    send_framebuffer_update_request(false);
 
 
     auto remote_endp = socket_.remote_endpoint(ec);
@@ -219,21 +217,131 @@ std::vector<std::string> client_impl::supported_frame_encodings() const
     return encs;
 }
 
-void client_impl::send_pointer_event(int x, int y, int buttonMask)
+bool client_impl::send_pointer_event(int x, int y, int buttonMask)
 {
     proto::rfbPointerEventMsg pe {};
     pe.buttonMask = buttonMask;
     pe.x          = std::max(x, 0);
     pe.y          = std::max(y, 0);
-    send_msg_to_server(proto::rfbPointerEvent, &pe, sizeof(pe));
+    return send_msg_to_server(proto::rfbPointerEvent, &pe, sizeof(pe));
 }
 
-void client_impl::send_key_event(uint32_t key, bool down)
+bool client_impl::send_client_cut_text(std::string_view text)
+{
+    proto::rfbClientCutTextMsg cct {};
+    cct.pad1   = 0;
+    cct.pad2   = 0;
+    cct.length = (int)text.size();
+
+    return send_msg_to_server_buffers(
+        proto::rfbClientCutText, boost::asio::buffer(&cct, sizeof(cct)), text);
+}
+
+bool client_impl::send_client_cut_text_utf8(std::string_view text)
+{
+    if (!extendedClipboardServerCapabilities_.any())
+        return false;
+#if defined(LIBVNC_HAVE_LIBZ)
+    boost::endian::big_uint32_buf_t flags {};
+    flags = proto::rfbExtendedClipboard_Provide | proto::rfbExtendedClipboard_Text;
+
+    boost::asio::streambuf compress_buffer;
+    std::ostream out_os(&compress_buffer);
+
+    {
+        boost::endian::big_uint32_buf_t text_size {};
+        text_size = (uint32_t)text.size();
+
+        zstr::ostream z_os(out_os, zstr::default_buff_size, -1, 15);
+        z_os.write((char*)&text_size, sizeof(text_size));
+        z_os.write(text.data(), text.size());
+    }
+    int len = sizeof(flags) + compress_buffer.size();
+
+    proto::rfbClientCutTextMsg cct {};
+    cct.pad1   = 0;
+    cct.pad2   = 0;
+    cct.length = -len;
+
+    return send_msg_to_server_buffers(proto::rfbClientCutText,
+                                      boost::asio::buffer(&cct, sizeof(cct)),
+                                      boost::asio::buffer(&flags, sizeof(flags)),
+                                      compress_buffer.data());
+#else
+    return false;
+#endif
+}
+
+bool client_impl::text_chat_send(std::string_view text)
+{
+    proto::rfbTextChatMsg chat {};
+    chat.pad1   = 0;
+    chat.pad2   = 0;
+    chat.length = (int)text.length();
+    return send_msg_to_server_buffers(
+        proto::rfbTextChat, boost::asio::buffer(&chat, sizeof(chat)), text);
+}
+
+bool client_impl::text_chat_open()
+{
+    proto::rfbTextChatMsg chat {};
+    chat.pad1   = 0;
+    chat.pad2   = 0;
+    chat.length = proto::rfbTextChatOpen;
+    return send_msg_to_server(proto::rfbTextChat, &chat, sizeof(chat));
+}
+
+bool client_impl::text_chat_close()
+{
+    proto::rfbTextChatMsg chat {};
+    chat.pad1   = 0;
+    chat.pad2   = 0;
+    chat.length = proto::rfbTextChatClose;
+    return send_msg_to_server(proto::rfbTextChat, &chat, sizeof(chat));
+}
+
+bool client_impl::text_chat_finish()
+{
+    proto::rfbTextChatMsg chat {};
+    chat.pad1   = 0;
+    chat.pad2   = 0;
+    chat.length = proto::rfbTextChatFinished;
+    return send_msg_to_server(proto::rfbTextChat, &chat, sizeof(chat));
+}
+
+bool client_impl::permit_server_input(bool enabled)
+{
+    proto::rfbSetServerInputMsg msg {};
+    msg.pad    = 0;
+    msg.status = enabled ? 1 : 0;
+    return send_msg_to_server(proto::rfbSetServerInput, &msg, sizeof(msg));
+}
+
+bool client_impl::send_xvp_msg(uint8_t version, proto::rfbXvpCode code)
+{
+    proto::rfbXvpMsg xvp {};
+    xvp.pad     = 0;
+    xvp.version = version;
+    xvp.code    = code;
+    return send_msg_to_server(proto::rfbXvp, &xvp, sizeof(xvp));
+}
+
+bool client_impl::send_key_event(uint32_t key, bool down)
 {
     proto::rfbKeyEventMsg ke {};
     ke.down = down ? 1 : 0;
     ke.key  = key;
-    send_msg_to_server(proto::rfbKeyEvent, &ke, sizeof(ke));
+    return send_msg_to_server(proto::rfbKeyEvent, &ke, sizeof(ke));
+}
+
+bool client_impl::send_extended_key_event(uint32_t keysym, uint32_t keycode, bool down)
+{
+    proto::rfbQemuExtendedKeyEventMsg ke {};
+    ke.subtype = 0; /* key event subtype */
+    ke.down    = down;
+    ke.keysym  = keysym;
+    ke.keycode = keycode;
+    return send_msg_to_server(proto::rfbQemuEvent, &ke, sizeof(ke));
 }
 
 boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
@@ -478,75 +586,101 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     co_return error {};
 }
 
-void client_impl::set_format(const proto::rfbPixelFormat& format)
+bool client_impl::send_format(const proto::rfbPixelFormat& format)
 {
-    boost::asio::dispatch(strand_, [this, self = shared_from_this(), format]() {
-        proto::rfbSetPixelFormatMsg spf {};
-        spf.pad1   = 0;
-        spf.pad2   = 0;
-        spf.format = format;
+    proto::rfbSetPixelFormatMsg spf {};
+    spf.pad1   = 0;
+    spf.pad2   = 0;
+    spf.format = format;
 
-        if (send_msg_to_server(proto::rfbSetPixelFormat, &spf, sizeof(spf)))
-            buffer_.set_format(format);
-    });
+    if (send_msg_to_server(proto::rfbSetPixelFormat, &spf, sizeof(spf))) {
+        buffer_.set_format(format);
+        return true;
+    }
+    return false;
 }
 
-void client_impl::set_frame_encodings(const std::vector<std::string>& encodings)
+bool client_impl::send_frame_encodings(const std::vector<std::string>& encodings)
 {
-    boost::asio::dispatch(strand_, [this, self = shared_from_this(), encodings]() {
-        std::vector<boost::endian::big_uint32_buf_t> encs;
+    std::vector<boost::endian::big_uint32_buf_t> encs;
 
-        bool requestCompressLevel    = false;
-        bool requestQualityLevel     = false;
-        bool requestLastRectEncoding = false;
+    bool requestCompressLevel    = false;
+    bool requestQualityLevel     = false;
+    bool requestLastRectEncoding = false;
 
-        auto apply_codecs =
-            codecs_ | std::views::filter([&](const auto& enc) {
-                if (!enc->is_frame_codec())
-                    return true;
+    auto apply_codecs = codecs_ | std::views::filter([&](const auto& enc) {
+                            if (!enc->is_frame_codec())
+                                return true;
 
-                auto iter = std::ranges::find_if(
-                    encodings, [&](const auto& enc_name) { return enc->codec_name() == enc_name; });
-                return iter != encodings.end();
-            });
+                            auto iter = std::ranges::find_if(encodings, [&](const auto& enc_name) {
+                                return enc->codec_name() == enc_name;
+                            });
+                            return iter != encodings.end();
+                        });
 
-        for (const auto& codec : apply_codecs) {
-            encs.emplace_back(codec->encoding_code());
+    for (const auto& codec : apply_codecs) {
+        encs.emplace_back(codec->encoding_code());
 
-            if (codec->requestCompressLevel())
-                requestCompressLevel = true;
-            if (codec->requestQualityLevel())
-                requestQualityLevel = true;
-            if (codec->requestLastRectEncoding())
-                requestLastRectEncoding = true;
-        }
+        if (codec->requestCompressLevel())
+            requestCompressLevel = true;
+        if (codec->requestQualityLevel())
+            requestQualityLevel = true;
+        if (codec->requestLastRectEncoding())
+            requestLastRectEncoding = true;
+    }
 
-        if (requestCompressLevel)
-            encs.emplace_back(compress_level_ + proto::rfbEncodingCompressLevel0);
+    if (requestCompressLevel)
+        encs.emplace_back(compress_level_ + proto::rfbEncodingCompressLevel0);
 
-        if (requestQualityLevel)
-            encs.emplace_back(quality_level_ + proto::rfbEncodingQualityLevel0);
+    if (requestQualityLevel)
+        encs.emplace_back(quality_level_ + proto::rfbEncodingQualityLevel0);
 
-        if (requestLastRectEncoding)
-            encs.emplace_back(proto::rfbEncodingLastRect);
+    if (requestLastRectEncoding)
+        encs.emplace_back(proto::rfbEncodingLastRect);
 
 #ifdef LIBVNC_HAVE_LIBZ
-        encs.emplace_back(proto::rfbEncodingExtendedClipboard);
+    encs.emplace_back(proto::rfbEncodingExtendedClipboard);
 #endif
 
-        proto::rfbSetEncodingsMsg msg {};
-        msg.pad        = 0;
-        msg.nEncodings = encs.size();
+    proto::rfbSetEncodingsMsg msg {};
+    msg.pad        = 0;
+    msg.nEncodings = encs.size();
 
-        boost::asio::streambuf buffer;
-        std::ostream os(&buffer);
-        os.write((char*)&msg, sizeof(msg));
+    return send_msg_to_server_buffers(
+        proto::rfbSetEncodings, boost::asio::buffer(&msg, sizeof(msg)), encs);
+}
 
-        for (const auto& enc : encs)
-            os.write((char*)&enc, sizeof(enc));
+bool client_impl::send_scale_setting(int scale)
+{
+    proto::rfbSetScaleMsg ssm {};
+    ssm.scale = scale;
+    ssm.pad   = 0;
 
-        send_msg_to_server(proto::rfbSetEncodings, buffer.data().data(), buffer.size());
-    });
+    if (supported_messages_.supports_client2server(proto::rfbSetScale)) {
+        if (!send_msg_to_server(proto::rfbSetScale, &ssm, sizeof(ssm)))
+            return false;
+    }
+    if (supported_messages_.supports_client2server(proto::rfbPalmVNCSetScaleFactor)) {
+        if (!send_msg_to_server(proto::rfbPalmVNCSetScaleFactor, &ssm, sizeof(ssm)))
+            return false;
+    }
+    return true;
+}
+
+bool client_impl::send_ext_desktop_size(const std::vector<proto::rfbExtDesktopScreen>& screens)
+{
+    if (screens.empty())
+        return true;
+
+    proto::rfbSetDesktopSizeMsg sdm {};
+    sdm.pad1            = 0;
+    sdm.width           = screens.front().width;
+    sdm.height          = screens.front().height;
+    sdm.numberOfScreens = screens.size();
+    sdm.pad2            = 0;
+
+    return send_msg_to_server_buffers(
+        proto::rfbSetDesktopSize, boost::asio::buffer(&sdm, sizeof(sdm)), screens);
 }
 
 boost::asio::awaitable<error> client_impl::server_message_loop()
@@ -637,22 +771,23 @@ bool client_impl::send_msg_to_server(const proto::rfbClientToServerMsg& ID,
                                      const void* data,
                                      std::size_t len)
 {
+    return send_msg_to_server_buffers(ID, boost::asio::buffer((const char*)data, len));
+}
+
+bool client_impl::send_msg_to_server_buffers(const proto::rfbClientToServerMsg& ID,
+                                             const std::vector<boost::asio::const_buffer>& buffers)
+{
     if (!supported_messages_.supports_client2server(ID)) {
         spdlog::warn("Unsupported client2server protocol: {}", (int)ID);
         return false;
     }
+    std::vector<uint8_t> buffer(boost::asio::buffer_size(buffers) + sizeof(ID));
+    std::memcpy(buffer.data(), &ID, sizeof(ID));
+    boost::asio::buffer_copy(
+        boost::asio::buffer(buffer.data() + sizeof(ID), buffer.size() - sizeof(ID)), buffers);
 
-    std::vector<uint8_t> buffer;
-    buffer.reserve(len + sizeof(ID));
-    buffer.push_back(ID);
-    std::copy((uint8_t*)data, (uint8_t*)data + len, std::back_inserter(buffer));
     send_raw_data(std::move(buffer));
     return true;
-}
-
-void client_impl::send_raw_data(const std::span<uint8_t>& data)
-{
-    send_raw_data(std::vector<uint8_t>(data.begin(), data.end()));
 }
 
 void client_impl::send_raw_data(std::vector<uint8_t>&& data)
@@ -689,7 +824,7 @@ void client_impl::send_raw_data(std::vector<uint8_t>&& data)
     });
 }
 
-void client_impl::HandleKeyboardLedState(int state)
+void client_impl::handle_keyboard_led_state(int state)
 {
     if (current_keyboard_led_state_ == state)
         return;
@@ -711,6 +846,12 @@ void client_impl::handle_supported_messages(const proto::rfbSupportedMessages& m
 {
     supported_messages_.assign(messages);
     supported_messages_.print();
+}
+
+void client_impl::handle_ext_desktop_screen(const std::vector<proto::rfbExtDesktopScreen>& screens)
+{
+    screens_ = screens;
+    supported_messages_.set_client2server(proto::rfbSetDesktopSize);
 }
 
 void client_impl::resize_client_buffer(int width, int height)
@@ -787,20 +928,29 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbServerCutText()
     if (ec)
         co_return error::make_error(ec);
 
-    int32_t ilen = msg.length.value();
-
-    ilen = ilen < 0 ? -ilen : ilen;
+    int32_t ilen     = msg.length.value();
+    int32_t read_len = std::abs(ilen);
 
     boost::asio::streambuf buffer;
     co_await boost::asio::async_read(
-        socket_, buffer, boost::asio::transfer_exactly(ilen), net_awaitable[ec]);
+        socket_, buffer, boost::asio::transfer_exactly(read_len), net_awaitable[ec]);
     if (ec)
         co_return error::make_error(ec);
 
     std::istream input_stream(&buffer);
     std::string text;
-#if defined(LIBVNC_HAVE_LIBZ)
+    if (ilen > 0) {
+        text.resize(ilen);
+        input_stream.read(text.data(), text.size());
+        spdlog::info("Got server cut text: {}", text);
+        co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
+        if (handler_)
+            handler_->on_cut_text(text);
 
+        co_return error {};
+    }
+
+#if defined(LIBVNC_HAVE_LIBZ)
     boost::endian::big_uint32_buf_t flags {};
     input_stream.read((char*)&flags, sizeof(flags));
 
@@ -820,21 +970,23 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbServerCutText()
         spdlog::info("rfbServerCutTextMsg. default cap.");
         // client->extendedClipboardServerCapabilities |=
         //     rfbExtendedClipboard_Text; /* for now, only text */
+        extendedClipboardServerCapabilities_.reset();
+        extendedClipboardServerCapabilities_.set(proto::rfbExtendedClipboard_Text);
         co_return error {};
     }
 
-    boost::endian::big_uint32_buf_t size {};
+    boost::endian::big_uint32_buf_t text_size {};
     zstr::istream zs(input_stream);
-    if (!zs.read((char*)&size, sizeof(size))) {
+    if (!zs.read((char*)&text_size, sizeof(text_size))) {
         spdlog::error("rfbServerCutTextMsg. inflate size failed");
         co_return error {};
     }
 
-    if (size.value() > (1 << 20)) {
+    if (text_size.value() > (1 << 20)) {
         spdlog::error("rfbServerCutTextMsg. size too large");
         co_return error {};
     }
-    text.resize(size.value());
+    text.resize(text_size.value());
     if (!zs.read(text.data(), text.size())) {
         spdlog::error("rfbServerCutTextMsg. inflate buf failed");
         co_return error {};
@@ -842,14 +994,9 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbServerCutText()
     co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
     if (handler_)
         handler_->on_cut_text_utf8(text);
-#else
-    text.resize(ilen);
-    input_stream.read(text.data(), text.size());
-    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
-    if (handler_)
-        handler_->on_cut_text(text);
-#endif
+
     spdlog::info("Got server cut text: {}", std::filesystem::u8path(text).string());
+#endif
     co_return error {};
 }
 

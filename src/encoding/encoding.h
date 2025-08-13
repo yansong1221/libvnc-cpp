@@ -16,10 +16,12 @@ public:
     virtual void
     got_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask) = 0;
     virtual void handle_cursor_pos(int x, int y)                                                = 0;
-    virtual void HandleKeyboardLedState(int state)                                              = 0;
+    virtual void handle_keyboard_led_state(int state)                                           = 0;
     virtual void send_framebuffer_update_request(bool incremental)                              = 0;
     virtual void handle_server_identity(std::string_view text)                                  = 0;
     virtual void handle_supported_messages(const proto::rfbSupportedMessages& messages)         = 0;
+    virtual void
+    handle_ext_desktop_screen(const std::vector<proto::rfbExtDesktopScreen>& screens) = 0;
 };
 
 class codec

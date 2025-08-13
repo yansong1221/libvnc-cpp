@@ -33,16 +33,30 @@ public:
 
     int current_keyboard_led_state() const;
 
-    void set_format(const proto::rfbPixelFormat& format);
-    void set_frame_encodings(const std::vector<std::string>& encodings);
+    bool send_format(const proto::rfbPixelFormat& format);
+    bool send_frame_encodings(const std::vector<std::string>& encodings);
+    bool send_scale_setting(int scale);
+    bool send_ext_desktop_size(const std::vector<proto::rfbExtDesktopScreen>& screens);
+    bool send_key_event(uint32_t key, bool down);
+    bool send_extended_key_event(uint32_t keysym, uint32_t keycode, bool down);
+    bool send_pointer_event(int x, int y, int buttonMask);
+    bool send_client_cut_text(std::string_view text);
+    bool send_client_cut_text_utf8(std::string_view text);
+
+    bool text_chat_send(std::string_view text);
+    bool text_chat_open();
+    bool text_chat_close();
+    bool text_chat_finish();
+
+    bool permit_server_input(bool enabled);
+
+    bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
 
     void send_framebuffer_update_request(int x, int y, int w, int h, bool incremental);
     void send_framebuffer_update_request(bool incremental) override;
 
     std::vector<std::string> supported_frame_encodings() const;
 
-    void send_pointer_event(int x, int y, int buttonMask);
-    void send_key_event(uint32_t key, bool down);
 
 private:
     boost::asio::awaitable<error> async_connect_rfbserver();
@@ -57,7 +71,17 @@ private:
     bool send_msg_to_server(const proto::rfbClientToServerMsg& ID,
                             const void* data,
                             std::size_t len);
-    void send_raw_data(const std::span<uint8_t>& data);
+    bool send_msg_to_server_buffers(const proto::rfbClientToServerMsg& ID,
+                                    const std::vector<boost::asio::const_buffer>& buffers);
+
+    template<typename... Buffers>
+    bool send_msg_to_server_buffers(const proto::rfbClientToServerMsg& ID,
+                                    const Buffers&... buffers)
+    {
+        std::vector<boost::asio::const_buffer> bufs;
+        (bufs.push_back(boost::asio::buffer(buffers)), ...);
+        return send_msg_to_server_buffers(ID, bufs);
+    }
     void send_raw_data(std::vector<uint8_t>&& data);
 
 protected:
@@ -69,9 +93,10 @@ protected:
     {
     }
     void handle_cursor_pos(int x, int y) override { }
-    void HandleKeyboardLedState(int state) override;
+    void handle_keyboard_led_state(int state) override;
     void handle_server_identity(std::string_view text) override;
     void handle_supported_messages(const proto::rfbSupportedMessages& messages) override;
+    void handle_ext_desktop_screen(const std::vector<proto::rfbExtDesktopScreen>& screens) override;
 
     void resize_client_buffer(int width, int height);
 
@@ -105,6 +130,8 @@ public:
     std::string desktop_name_;
     int current_keyboard_led_state_ = 0;
 
+    std::vector<proto::rfbExtDesktopScreen> screens_;
+
     /** negotiated protocol version */
     int major_ = proto::rfbProtocolMajorVersion, minor_ = proto::rfbProtocolMinorVersion;
 
@@ -114,6 +141,8 @@ public:
     std::vector<std::unique_ptr<encoding::codec>> codecs_;
     using message_handler = std::function<boost::asio::awaitable<error>()>;
     std::map<uint8_t, message_handler> message_map_;
+
+    std::bitset<32> extendedClipboardServerCapabilities_;
 };
 
 

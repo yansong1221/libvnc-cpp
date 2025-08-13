@@ -44,9 +44,21 @@ client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
 }
 
 
+void client_delegate::on_keyboard_led_state(int state)
+{
+}
+
 void client_delegate::on_text_chat(const proto::rfbTextChatType& type, std::string_view message)
 {
     return;
+}
+
+void client_delegate::on_cut_text_utf8(std::string_view message)
+{
+}
+
+void client_delegate::on_cut_text(std::string_view message)
+{
 }
 
 client::client(boost::asio::io_context& executor)
@@ -104,22 +116,80 @@ const frame_buffer& client::frame() const
     return impl_->frame();
 }
 
-
-void client::set_format(const proto::rfbPixelFormat& format)
+bool client::send_format(const proto::rfbPixelFormat& format)
 {
-    impl_->set_format(format);
+    return impl_->send_format(format);
 }
 
-void client::send_pointer_event(int x, int y, int buttonMask)
+bool client::send_frame_encodings(const std::vector<std::string>& encodings)
 {
-    impl_->send_pointer_event(x, y, buttonMask);
+    return impl_->send_frame_encodings(encodings);
 }
 
-void client::send_key_event(uint32_t key, bool down)
+bool client::send_scale_setting(int scale)
 {
-    impl_->send_key_event(key, down);
+    return impl_->send_scale_setting(scale);
 }
 
+bool client::send_ext_desktop_size(const std::vector<proto::rfbExtDesktopScreen>& screens)
+{
+    return impl_->send_ext_desktop_size(screens);
+}
+
+bool client::send_pointer_event(int x, int y, int buttonMask)
+{
+    return impl_->send_pointer_event(x, y, buttonMask);
+}
+
+bool client::send_key_event(uint32_t key, bool down)
+{
+    return impl_->send_key_event(key, down);
+}
+
+bool client::send_extended_key_event(uint32_t keysym, uint32_t keycode, bool down)
+{
+    return impl_->send_extended_key_event(keysym, keycode, down);
+}
+
+bool client::send_client_cut_text(std::string_view text)
+{
+    return impl_->send_client_cut_text(text);
+}
+
+bool client::send_client_cut_text_utf8(std::string_view text)
+{
+    return impl_->send_client_cut_text_utf8(text);
+}
+
+bool client::text_chat_send(std::string_view text)
+{
+    return impl_->text_chat_send(text);
+}
+
+bool client::text_chat_open()
+{
+    return impl_->text_chat_open();
+}
+
+bool client::text_chat_close()
+{
+    return impl_->text_chat_close();
+}
+
+bool client::text_chat_finish()
+{
+    return impl_->text_chat_finish();
+}
+
+bool client::permit_server_input(bool enabled)
+{
+    return impl_->permit_server_input(enabled);
+}
+
+bool client::send_xvp_msg(uint8_t version, proto::rfbXvpCode code)
+{
+    return impl_->send_xvp_msg(version, code);
+}
 
 int client::current_keyboard_led_state() const
 {

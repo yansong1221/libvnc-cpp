@@ -25,7 +25,7 @@ public:
         //     client->HandleKeyboardLedState(client, rect.r.x, 0);
         ///* stash it for the future */
         // client->CurrentKeyboardLedState = rect.r.x;
-        op->HandleKeyboardLedState(rect.x.value());
+        op->handle_keyboard_led_state(rect.x.value());
         co_return error {};
     }
 };

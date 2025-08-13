@@ -147,7 +147,8 @@ enum rfbClientToServerMsg : uint8_t
     rfbMonitorInfo    = 252,
     rfbSetMonitor     = 254,
     /* Xvp message - bidirectional */
-    rfbXvp = 250
+    rfbXvp       = 250,
+    rfbQemuEvent = 255
 };
 
 enum rfbAuthScheme : uint8_t
@@ -329,12 +330,12 @@ struct rfbExtDesktopSizeMsg
 
 struct rfbExtDesktopScreen
 {
-    boost::endian::big_uint32_buf_t id;
-    boost::endian::big_uint16_buf_t x;
-    boost::endian::big_uint16_buf_t y;
-    boost::endian::big_uint16_buf_t width;
-    boost::endian::big_uint16_buf_t height;
-    boost::endian::big_uint32_buf_t flags;
+    boost::endian::big_uint32_buf_t id {};
+    boost::endian::big_uint16_buf_t x {};
+    boost::endian::big_uint16_buf_t y {};
+    boost::endian::big_uint16_buf_t width {};
+    boost::endian::big_uint16_buf_t height {};
+    boost::endian::big_uint32_buf_t flags {};
 };
 struct rfbSupportedMessages
 {
@@ -396,6 +397,17 @@ struct rfbTextChatMsg
         length; /*  Specific values for Open, close, finished (-1, -2, -3) */
     /* followed by char text[length] */
 };
+enum rfbXvpCode : uint8_t
+{
+    /* server message codes */
+    rfbXvp_Fail = 0,
+    rfbXvp_Init = 1,
+
+    /* client message codes */
+    rfbXvp_Shutdown = 2,
+    rfbXvp_Reboot   = 3,
+    rfbXvp_Reset    = 4
+};
 
 struct rfbXvpMsg
 {
@@ -445,6 +457,63 @@ struct rfbKeyEventMsg
     boost::endian::big_uint8_buf_t down; /* true if down (press), false if up */
     boost::endian::big_uint16_buf_t pad;
     boost::endian::big_uint32_buf_t key; /* key is specified as an X keysym */
+};
+struct rfbQemuExtendedKeyEventMsg
+{
+    boost::endian::big_uint8_buf_t subtype; /* always 0 */
+    boost::endian::big_uint16_buf_t down;
+    boost::endian::big_uint32_buf_t keysym;  /* keysym is specified as an X keysym, may be 0 */
+    boost::endian::big_uint32_buf_t keycode; /* keycode is specified as XT key code */
+};
+
+struct rfbSetScaleMsg
+{
+    boost::endian::big_uint8_buf_t scale; /* Scale value 1<sv<n */
+    boost::endian::big_uint16_buf_t pad;
+};
+
+/*-----------------------------------------------------------------------------
+ * SetDesktopSize client -> server message
+ *
+ * Allows the client to request that the framebuffer and physical screen
+ * resolutions are changed.
+ */
+
+struct rfbSetDesktopSizeMsg
+{
+    boost::endian::big_uint8_buf_t pad1;
+    boost::endian::big_uint16_buf_t width;
+    boost::endian::big_uint16_buf_t height;
+    boost::endian::big_uint8_buf_t numberOfScreens;
+    boost::endian::big_uint8_buf_t pad2;
+
+    /* Followed by rfbExtDesktopScreen[numberOfScreens] */
+};
+
+struct rfbClientCutTextMsg
+{
+    boost::endian::big_uint8_buf_t pad1;
+    boost::endian::big_uint16_buf_t pad2;
+    boost::endian::big_int32_buf_t length;
+    // adzm - 2010-07 - Extended clipboard support
+    /*
+    rfbEncodingExtendedClipboard provides extended clipboard functionality.
+    If extended clipboard data is being used, the length will be negative.
+    See rfbExtendedClipboardData for more info.
+
+    Otherwise, if using classic clipboard, followed by char text[length]
+*/
+};
+
+/*-----------------------------------------------------------------------------
+ * rdv@2002 - Set input status
+ * SetServerInput - Server input is dis/enabled
+ */
+
+struct rfbSetServerInputMsg
+{
+    boost::endian::big_uint8_buf_t status; /* Scale value 1<sv<n */
+    boost::endian::big_uint16_buf_t pad;
 };
 
 } // namespace libvnc::proto

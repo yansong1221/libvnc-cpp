@@ -31,7 +31,7 @@ public:
         if (ec)
             co_return error::make_error(ec);
 
-
+        op->handle_supported_messages(supportedMessages);
         co_return error {};
     }
 };
