@@ -61,13 +61,15 @@ void client_delegate::on_cut_text(std::string_view message)
 {
 }
 
-client::client(boost::asio::io_context& executor)
+client::client(boost::asio::io_context& executor, client_delegate* handler)
     : impl_(std::make_shared<client_impl>(executor.get_executor()))
 {
+    impl_->set_delegate(handler);
 }
 
 client::~client()
 {
+    impl_->set_delegate(nullptr);
     impl_->close();
 }
 
@@ -76,14 +78,9 @@ void client::start()
     impl_->start();
 }
 
-void client::close()
+void client::stop()
 {
     impl_->close();
-}
-
-void client::set_delegate(client_delegate* handler)
-{
-    impl_->set_delegate(handler);
 }
 
 void client::set_host(std::string_view host)

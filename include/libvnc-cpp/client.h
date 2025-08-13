@@ -7,11 +7,6 @@
 #include <set>
 
 namespace libvnc {
-class error;
-}
-
-namespace libvnc {
-
 
 class client_delegate
 {
@@ -36,14 +31,12 @@ class client_impl;
 class client
 {
 public:
-    client(boost::asio::io_context& executor);
+    client(boost::asio::io_context& executor, client_delegate* handler);
     virtual ~client();
 
 public:
     void start();
-    void close();
-
-    void set_delegate(client_delegate* handler);
+    void stop();
 
     void set_host(std::string_view host);
     void set_port(int port);
@@ -76,6 +69,9 @@ public:
     int current_keyboard_led_state() const;
 
 private:
+    client(const client&)            = delete;
+    client& operator=(const client&) = delete;
+
     friend class client_impl;
     std::shared_ptr<client_impl> impl_;
 };
