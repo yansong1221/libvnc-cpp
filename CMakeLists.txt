@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(libvnc VERSION 1.0.0.0)
+project(libvnc-cpp VERSION 1.0.0.0)
 
 get_directory_property(_HAS_PARENT PARENT_DIRECTORY)
 if(_HAS_PARENT)
@@ -36,6 +36,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(LIBVNC_CPP_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(LIBVNC_CPP_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+include(cmake)
 
 add_subdirectory(src)
 

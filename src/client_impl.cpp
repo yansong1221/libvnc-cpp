@@ -1,56 +1,37 @@
 #include "client_impl.h"
 
-#include "use_awaitable.hpp"
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/connect.hpp>
-#include <boost/asio/detached.hpp>
-
-#include <boost/asio/streambuf.hpp>
-#include <boost/asio/use_future.hpp>
-#include <boost/asio/write.hpp>
-#include <openssl/des.h> // DES 加密函数
-#include <openssl/dh.h>
-#include <openssl/evp.h>
-#include <openssl/md5.h>
-#include <openssl/rand.h>
-#include <openssl/rand.h> // 随机数生成（用于挑战值）
-#include <openssl/sha.h>
-#include <ranges>
-#include <spdlog/spdlog.h>
-#include <string.h>
-
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
-#include <openssl/provider.h>
-#endif
-
-#include "libvnc-cpp/client.h"
-#include "libvnc-cpp/error.h"
-#include "libvnc-cpp/proto.h"
-
+#include "d3des.hpp"
 #include "encoding/copy_rect.hpp"
 #include "encoding/cursor.hpp"
+#include "encoding/ext_desktop_size.hpp"
+#include "encoding/hextile.hpp"
 #include "encoding/keyboard_led_state.hpp"
 #include "encoding/new_fb_size.hpp"
 #include "encoding/pointer_pos.hpp"
 #include "encoding/raw.hpp"
 #include "encoding/rre.hpp"
-
-#if defined(LIBVNC_HAVE_LIBZ)
-#include <zstr.hpp>
-#endif
-
-#include "d3des.hpp"
-#include "encoding/ext_desktop_size.hpp"
-#include "encoding/hextile.hpp"
 #include "encoding/server_identity.hpp"
 #include "encoding/supported_encodings.hpp"
 #include "encoding/supported_messages.hpp"
 #include "encoding/ultra.hpp"
 #include "encoding/zlib.hpp"
-#include <boost/asio/experimental/awaitable_operators.hpp>
+#include "libvnc-cpp/client.h"
+#include "libvnc-cpp/error.h"
+#include "libvnc-cpp/proto.h"
+#include "use_awaitable.hpp"
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/streambuf.hpp>
+#include <boost/asio/write.hpp>
 #include <filesystem>
 #include <iostream>
 #include <ranges>
+#include <spdlog/spdlog.h>
+#include <string.h>
+#if defined(LIBVNC_HAVE_LIBZ)
+#include <zstr.hpp>
+#endif
 
 namespace libvnc {
 
@@ -248,13 +229,11 @@ bool client_impl::send_client_cut_text_utf8(std::string_view text)
     flags = proto::rfbExtendedClipboard_Provide | proto::rfbExtendedClipboard_Text;
 
     boost::asio::streambuf compress_buffer;
-    std::ostream out_os(&compress_buffer);
-
     {
         boost::endian::big_uint32_buf_t text_size {};
         text_size = (uint32_t)text.size();
 
-        zstr::ostream z_os(out_os, zstr::default_buff_size, -1, 15);
+        zstr::ostream z_os(&compress_buffer, zstr::default_buff_size, -1, 15);
         z_os.write((char*)&text_size, sizeof(text_size));
         z_os.write(text.data(), text.size());
     }
@@ -623,11 +602,11 @@ bool client_impl::send_frame_encodings(const std::vector<std::string>& encodings
     for (const auto& codec : apply_codecs) {
         encs.emplace_back(codec->encoding_code());
 
-        if (codec->requestCompressLevel())
+        if (codec->request_compress_level())
             requestCompressLevel = true;
-        if (codec->requestQualityLevel())
+        if (codec->request_quality_level())
             requestQualityLevel = true;
-        if (codec->requestLastRectEncoding())
+        if (codec->request_last_rect_encoding())
             requestLastRectEncoding = true;
     }
 
@@ -989,7 +968,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbServerCutText()
     }
 
     boost::endian::big_uint32_buf_t text_size {};
-    zstr::istream zs(input_stream);
+    zstr::istream zs(input_stream, zstr::default_buff_size, false, 15);
     if (!zs.read((char*)&text_size, sizeof(text_size))) {
         spdlog::error("rfbServerCutTextMsg. inflate size failed");
         co_return error {};

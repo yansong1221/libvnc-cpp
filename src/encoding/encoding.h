@@ -36,9 +36,9 @@ public:
                                                  const proto::rfbRectangle& rect,
                                                  frame_buffer& buffer,
                                                  std::shared_ptr<frame_op> op) = 0;
-    virtual bool requestLastRectEncoding() const { return false; }
-    virtual bool requestCompressLevel() const { return false; }
-    virtual bool requestQualityLevel() const { return false; }
+    virtual bool request_last_rect_encoding() const { return false; }
+    virtual bool request_compress_level() const { return false; }
+    virtual bool request_quality_level() const { return false; }
 };
 
 class frame_codec : public codec

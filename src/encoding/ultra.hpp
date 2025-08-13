@@ -14,7 +14,7 @@ class ultra : public frame_codec
 public:
     void reset() override { }
     std::string codec_name() const override { return "ultra"; }
-    bool requestLastRectEncoding() const override { return true; }
+    bool request_last_rect_encoding() const override { return true; }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingUltra;
@@ -99,7 +99,7 @@ class ultra_zip : public frame_codec
 public:
     void reset() override { }
     std::string codec_name() const override { return "ultrazip"; }
-    bool requestLastRectEncoding() const override { return true; }
+    bool request_last_rect_encoding() const override { return true; }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingUltraZip;
@@ -182,7 +182,7 @@ public:
             ptr += 2;
             memcpy((char*)&se, ptr, 4);
             ptr += 4;
-            int v = se.value();
+      
             if (se.value() == proto::rfbEncodingRaw) {
                 frame.got_bitmap(ptr, sx.value(), sy.value(), sw.value(), sh.value());
                 ptr += ((sw.value() * sh.value()) * byte_pixel);

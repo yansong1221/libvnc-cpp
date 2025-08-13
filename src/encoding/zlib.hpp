@@ -11,13 +11,13 @@ class zlib : public frame_codec
 {
 public:
     zlib()
-        : z_is_(&buffer_)
+        : z_is_(&buffer_, zstr::default_buff_size, false, 15)
     {
     }
     void reset() override { }
     std::string codec_name() const override { return "zlib"; }
     proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZlib; }
-    bool requestCompressLevel() const override { return true; }
+    bool request_compress_level() const override { return true; }
 
     boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
                                          const proto::rfbRectangle& rect,
@@ -56,7 +56,7 @@ public:
             if (read_count != row_bytes) {
                 bool eof = z_is_.eof();
                 auto sz  = buffer_.size();
-                //co_return error::make_error(custom_error::frame_error, "zlib error");
+                co_return error::make_error(custom_error::frame_error, "zlib error");
             }
         }
         co_return error {};
