@@ -107,6 +107,14 @@ private:
     boost::asio::awaitable<error> on_rfbResizeFrameBuffer();
     boost::asio::awaitable<error> on_rfbPalmVNCReSizeFrameBuffer();
 
+    template<typename T, typename... _Types>
+        requires std::derived_from<T, encoding::codec>
+    void register_encoding(_Types&&... _Args)
+    {
+        auto codec = std::make_unique<T>(std::forward<_Types>(_Args)...);
+        codecs_.push_back(std::move(codec));
+    }
+
 
 public:
     boost::asio::strand<boost::asio::any_io_executor> strand_;
@@ -115,9 +123,9 @@ public:
     std::deque<std::vector<uint8_t>> send_que_;
     bool is_initialization_completed_ = false;
 
-    std::string host_   = "127.0.0.1";
-    uint16_t port_      = 5900;
-    bool share_desktop_ = true;
+    std::string host_        = "127.0.0.1";
+    uint16_t port_           = 5900;
+    bool share_desktop_      = true;
     uint32_t compress_level_ = 3;
     uint32_t quality_level_  = 5;
 

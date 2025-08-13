@@ -67,38 +67,37 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
     : strand_(executor)
     , socket_(executor)
     , resolver_(executor)
+
 {
-    message_map_[proto::rfbFramebufferUpdate] =
-        std::bind(&client_impl::on_rfbFramebufferUpdate, this);
-    message_map_[proto::rfbSetColourMapEntries] =
-        std::bind(&client_impl::on_rfbSetColourMapEntries, this);
-    message_map_[proto::rfbBell]          = std::bind(&client_impl::on_rfbBell, this);
-    message_map_[proto::rfbServerCutText] = std::bind(&client_impl::on_rfbServerCutText, this);
-    message_map_[proto::rfbTextChat]      = std::bind(&client_impl::on_rfbTextChat, this);
-    message_map_[proto::rfbXvp]           = std::bind(&client_impl::on_rfbXvp, this);
-    message_map_[proto::rfbResizeFrameBuffer] =
-        std::bind(&client_impl::on_rfbResizeFrameBuffer, this);
-    message_map_[proto::rfbPalmVNCReSizeFrameBuffer] =
-        std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
+    message_map_ = {
+        {proto::rfbFramebufferUpdate, std::bind(&client_impl::on_rfbFramebufferUpdate, this)},
+        {proto::rfbSetColourMapEntries, std::bind(&client_impl::on_rfbSetColourMapEntries, this)},
+        {proto::rfbBell, std::bind(&client_impl::on_rfbBell, this)},
+        {proto::rfbServerCutText, std::bind(&client_impl::on_rfbServerCutText, this)},
+        {proto::rfbTextChat, std::bind(&client_impl::on_rfbTextChat, this)},
+        {proto::rfbXvp, std::bind(&client_impl::on_rfbXvp, this)},
+        {proto::rfbResizeFrameBuffer, std::bind(&client_impl::on_rfbResizeFrameBuffer, this)},
+        {proto::rfbPalmVNCReSizeFrameBuffer,
+         std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this)}};
 
-    codecs_.push_back(std::make_unique<encoding::zlib>());
-    codecs_.push_back(std::make_unique<encoding::ultra>());
-    codecs_.push_back(std::make_unique<encoding::ultra_zip>());
-    codecs_.push_back(std::make_unique<encoding::copy_rect>());
-    codecs_.push_back(std::make_unique<encoding::co_rre>());
-    codecs_.push_back(std::make_unique<encoding::rre>());
-    codecs_.push_back(std::make_unique<encoding::hextile>());
-    codecs_.push_back(std::make_unique<encoding::raw>());
+    register_encoding<encoding::zlib>();
+    register_encoding<encoding::ultra>();
+    register_encoding<encoding::ultra_zip>();
+    register_encoding<encoding::copy_rect>();
+    register_encoding<encoding::co_rre>();
+    register_encoding<encoding::rre>();
+    register_encoding<encoding::hextile>();
+    register_encoding<encoding::raw>();
 
-    codecs_.push_back(std::make_unique<encoding::x_cursor>());
-    codecs_.push_back(std::make_unique<encoding::rich_cursor>());
-    codecs_.push_back(std::make_unique<encoding::keyboard_led_state>());
-    codecs_.push_back(std::make_unique<encoding::new_fb_size>());
-    codecs_.push_back(std::make_unique<encoding::pointer_pos>());
-    codecs_.push_back(std::make_unique<encoding::server_identity>());
-    codecs_.push_back(std::make_unique<encoding::supported_encodings>());
-    codecs_.push_back(std::make_unique<encoding::ext_desktop_size>());
-    codecs_.push_back(std::make_unique<encoding::supported_messages>());
+    register_encoding<encoding::x_cursor>();
+    register_encoding<encoding::rich_cursor>();
+    register_encoding<encoding::keyboard_led_state>();
+    register_encoding<encoding::new_fb_size>();
+    register_encoding<encoding::pointer_pos>();
+    register_encoding<encoding::server_identity>();
+    register_encoding<encoding::supported_encodings>();
+    register_encoding<encoding::ext_desktop_size>();
+    register_encoding<encoding::supported_messages>();
 }
 
 const libvnc::frame_buffer& client_impl::frame() const
