@@ -120,7 +120,7 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
 
 const libvnc::frame_buffer& client_impl::frame() const
 {
-    return buffer_;
+    return frame_;
 }
 
 void client_impl::close()
@@ -203,7 +203,7 @@ void client_impl::send_framebuffer_update_request(int x, int y, int w, int h, bo
 
 void client_impl::send_framebuffer_update_request(bool incremental)
 {
-    return send_framebuffer_update_request(0, 0, buffer_.width(), buffer_.height(), incremental);
+    return send_framebuffer_update_request(0, 0, frame_.width(), frame_.height(), incremental);
 }
 
 std::vector<std::string> client_impl::supported_frame_encodings() const
@@ -580,7 +580,7 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     spdlog::info("VNC server default format:");
     si.format.print();
 
-    buffer_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
+    frame_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
 
     desktop_name_ = std::move(name);
     co_return error {};
@@ -594,7 +594,7 @@ bool client_impl::send_format(const proto::rfbPixelFormat& format)
     spf.format = format;
 
     if (send_msg_to_server(proto::rfbSetPixelFormat, &spf, sizeof(spf))) {
-        buffer_.set_format(format);
+        frame_.set_format(format);
         return true;
     }
     return false;
@@ -824,6 +824,17 @@ void client_impl::send_raw_data(std::vector<uint8_t>&& data)
     });
 }
 
+void client_impl::soft_cursor_lock_area(int x, int y, int w, int h)
+{
+}
+
+void client_impl::got_cursor_shape(int xhot,
+                                   int yhot,
+                                   const frame_buffer& rc_source,
+                                   const uint8_t* rc_mask)
+{
+}
+
 void client_impl::handle_keyboard_led_state(int state)
 {
     if (current_keyboard_led_state_ == state)
@@ -856,7 +867,7 @@ void client_impl::handle_ext_desktop_screen(const std::vector<proto::rfbExtDeskt
 
 void client_impl::resize_client_buffer(int width, int height)
 {
-    buffer_.set_size(width, height);
+    frame_.set_size(width, height);
 
     send_framebuffer_update_request(false);
     spdlog::info("Got new framebuffer size: {}x{}", width, height);
@@ -892,7 +903,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
         }
         const auto& codec = (*iter);
 
-        auto err = co_await codec->decode(socket_, UpdateRect.r, buffer_, shared_from_this());
+        auto err = co_await codec->decode(socket_, UpdateRect.r, frame_, shared_from_this());
         if (err)
             co_return err;
     }
@@ -900,7 +911,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
 
     co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
     if (handler_)
-        handler_->on_frame_update(buffer_);
+        handler_->on_frame_update(frame_);
 
     co_return error {};
 }

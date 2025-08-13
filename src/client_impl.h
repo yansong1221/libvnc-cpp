@@ -3,7 +3,6 @@
 #include "libvnc-cpp/client.h"
 #include "libvnc-cpp/error.h"
 #include "libvnc-cpp/proto.h"
-#include "rfb.h"
 #include "spdlog/spdlog.h"
 #include "supported_messages.hpp"
 #include <boost/asio/awaitable.hpp>
@@ -85,13 +84,11 @@ private:
     void send_raw_data(std::vector<uint8_t>&& data);
 
 protected:
-    void soft_cursor_lock_area(int x, int y, int w, int h) override { }
+    void soft_cursor_lock_area(int x, int y, int w, int h) override;
     void got_cursor_shape(int xhot,
                           int yhot,
                           const frame_buffer& rc_source,
-                          const uint8_t* rc_mask) override
-    {
-    }
+                          const uint8_t* rc_mask) override;
     void handle_cursor_pos(int x, int y) override { }
     void handle_keyboard_led_state(int state) override;
     void handle_server_identity(std::string_view text) override;
@@ -124,8 +121,7 @@ public:
     int compress_level_ = 3;
     int quality_level_  = 5;
 
-    frame_buffer buffer_;
-    std::mutex buffer_mutex_;
+    frame_buffer frame_;
 
     std::string desktop_name_;
     int current_keyboard_led_state_ = 0;
