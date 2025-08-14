@@ -47,6 +47,10 @@ public:
         return invoke(&client_delegate::on_cursor_shape, xhot, yhot, rc_source, rc_mask);
     }
     auto on_cursor_pos(int x, int y) { return invoke(&client_delegate::on_cursor_pos, x, y); }
+    auto on_status_changed(const client::status& s)
+    {
+        return invoke(&client_delegate::on_status_changed, s);
+    }
 
 
     template<typename Func, typename... Args>

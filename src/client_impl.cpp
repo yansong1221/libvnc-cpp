@@ -67,18 +67,16 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
     : strand_(executor)
     , socket_(executor)
     , resolver_(executor)
-
 {
-    message_map_ = {
-        {proto::rfbFramebufferUpdate, std::bind(&client_impl::on_rfbFramebufferUpdate, this)},
-        {proto::rfbSetColourMapEntries, std::bind(&client_impl::on_rfbSetColourMapEntries, this)},
-        {proto::rfbBell, std::bind(&client_impl::on_rfbBell, this)},
-        {proto::rfbServerCutText, std::bind(&client_impl::on_rfbServerCutText, this)},
-        {proto::rfbTextChat, std::bind(&client_impl::on_rfbTextChat, this)},
-        {proto::rfbXvp, std::bind(&client_impl::on_rfbXvp, this)},
-        {proto::rfbResizeFrameBuffer, std::bind(&client_impl::on_rfbResizeFrameBuffer, this)},
-        {proto::rfbPalmVNCReSizeFrameBuffer,
-         std::bind(&client_impl::on_rfbPalmVNCReSizeFrameBuffer, this)}};
+    register_message(proto::rfbFramebufferUpdate, &client_impl::on_rfbFramebufferUpdate, this);
+    register_message(proto::rfbSetColourMapEntries, &client_impl::on_rfbSetColourMapEntries, this);
+    register_message(proto::rfbBell, &client_impl::on_rfbBell, this);
+    register_message(proto::rfbServerCutText, &client_impl::on_rfbServerCutText, this);
+    register_message(proto::rfbTextChat, &client_impl::on_rfbTextChat, this);
+    register_message(proto::rfbXvp, &client_impl::on_rfbXvp, this);
+    register_message(proto::rfbResizeFrameBuffer, &client_impl::on_rfbResizeFrameBuffer, this);
+    register_message(
+        proto::rfbPalmVNCReSizeFrameBuffer, &client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
 
     register_encoding<encoding::zlib>();
     register_encoding<encoding::ultra>();
@@ -107,12 +105,16 @@ const libvnc::frame_buffer& client_impl::frame() const
 
 void client_impl::close()
 {
+    if (status_ == client::status::closed)
+        return;
+
     resolver_.cancel();
     if (socket_.is_open()) {
         boost::system::error_code ec;
         socket_.shutdown(boost::asio::socket_base::shutdown_both, ec);
         socket_.close(ec);
     }
+    commit_status(client::status::closed);
 }
 void client_impl::start()
 {
@@ -126,24 +128,48 @@ void client_impl::start()
 
 boost::asio::awaitable<libvnc::error> client_impl::co_start()
 {
-    close();
+    if (status_ != client::status::closed)
+        co_return error::make_error(boost::system::errc::make_error_code(
+            boost::system::errc::connection_already_in_progress));
 
-    boost::system::error_code ec;
-    is_initialization_completed_ = false;
-
+    commit_status(client::status::connecting);
     if (error err = co_await async_connect_rfbserver(); err) {
         close();
         handler_.on_connect(err);
         co_return err;
     }
+
+    commit_status(client::status::handshaking);
+    if (error err = co_await async_handshake(); err) {
+        close();
+        handler_.on_connect(err);
+        co_return err;
+    }
+
+    commit_status(client::status::authenticating);
+    if (auto err = co_await async_authenticate(); err) {
+        close();
+        handler_.on_connect(err);
+        spdlog::error("Authentication with the server failed: {}", err.message());
+        co_return err;
+    }
+
+    commit_status(client::status::initializing);
+    if (auto err = co_await async_client_init(); err) {
+        close();
+        handler_.on_connect(err);
+        spdlog::error("Failed to initialize the client: {}", err.message());
+        co_return err;
+    }
+    commit_status(client::status::connected);
     handler_.on_connect(error {});
 
     for (const auto& codec : codecs_)
         codec->init();
 
-    is_initialization_completed_ = true;
     send_framebuffer_update_request(false);
 
+    boost::system::error_code ec;
     auto remote_endp = socket_.remote_endpoint(ec);
 
     auto err = co_await server_message_loop();
@@ -153,8 +179,6 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
                  err.message());
 
     close();
-    is_initialization_completed_ = false;
-
     handler_.on_disconnect(err);
     co_return err;
 }
@@ -336,6 +360,12 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
         spdlog::error("Failed to connect rfbserver [{}:{}] : {}", host_, port_, ec.message());
         co_return error::make_error(ec);
     }
+    co_return error {};
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::async_handshake()
+{
+    boost::system::error_code ec;
 
     // handshake
     proto::rfbProtocolVersionMsg pv = {0};
@@ -409,18 +439,6 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
             "Failed to send rfbserver handshake data [{}:{}] : {}", host_, port_, ec.message());
         co_return error::make_error(ec);
     }
-
-
-    if (auto err = co_await async_authenticate(); err) {
-        spdlog::error("Authentication with the server failed: {}", err.message());
-        co_return err;
-    }
-
-    if (auto err = co_await async_client_init(); err) {
-        spdlog::error("Failed to initialize the client: {}", err.message());
-        co_return err;
-    }
-
     co_return error {};
 }
 
@@ -552,15 +570,19 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     spdlog::info("VNC server default format:");
     si.format.print();
 
+    int width  = si.framebufferWidth.value();
+    int height = si.framebufferHeight.value();
+
+    handler_.on_new_frame_size(width, height);
     if (auto format = handler_.want_format(); format && send_format(*format)) {
-        frame_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), *format);
+        frame_.init(width, height, *format);
     }
     else {
-        frame_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
+        frame_.init(width, height, si.format);
     }
     send_frame_encodings(supported_frame_encodings());
 
-    handler_.on_new_frame_size(frame_.width(), frame_.height());
+
     co_return error {};
 }
 
@@ -794,6 +816,14 @@ void client_impl::send_raw_data(std::vector<uint8_t>&& data)
     });
 }
 
+void client_impl::commit_status(const client::status& s)
+{
+    if (status_ == s)
+        return;
+    status_ = s;
+    handler_.on_status_changed(s);
+}
+
 void client_impl::soft_cursor_lock_area(int x, int y, int w, int h)
 {
 }
@@ -881,8 +911,6 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
             co_return err;
     }
     send_framebuffer_update_request(true);
-
-    co_await boost::asio::dispatch(strand_, net_awaitable[ec]);
     handler_.on_frame_update(frame_);
 
     co_return error {};

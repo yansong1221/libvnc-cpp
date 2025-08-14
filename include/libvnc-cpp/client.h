@@ -8,34 +8,23 @@
 
 namespace libvnc {
 
-class client_delegate
-{
-public:
-    virtual ~client_delegate()                        = default;
-    virtual void on_connect(const error& ec)          = 0;
-    virtual void on_disconnect(const error& ec)       = 0;
-    virtual void on_new_frame_size(int w, int h)      = 0;
-    virtual void on_frame_update(const frame_buffer&) = 0;
-    virtual void on_keyboard_led_state(int state);
-    virtual void on_text_chat(const proto::rfbTextChatType& type, std::string_view message);
-    virtual void on_cut_text_utf8(std::string_view message);
-    virtual void on_cut_text(std::string_view message);
-    virtual void on_bell();
-    virtual void
-    on_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask);
-    virtual void on_cursor_pos(int x, int y);
-
-    virtual std::string get_auth_password();
-    virtual proto::rfbPixelFormat want_format();
-    virtual proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths);
-};
-
+class client_delegate;
 class client_impl;
 class client
 {
 public:
     client(boost::asio::io_context& executor, client_delegate* handler);
     virtual ~client();
+
+    enum class status : uint32_t
+    {
+        closed = 0,
+        connecting,
+        handshaking,
+        authenticating,
+        initializing,
+        connected
+    };
 
 public:
     void start();
@@ -48,6 +37,7 @@ public:
     void set_quality_level(int level);
 
     const frame_buffer& frame() const;
+    status current_status() const;
 
     bool send_frame_encodings(const std::vector<std::string>& encodings);
     bool send_scale_setting(int scale);
@@ -76,5 +66,28 @@ private:
 
     friend class client_impl;
     std::shared_ptr<client_impl> impl_;
+};
+
+class client_delegate
+{
+public:
+    virtual ~client_delegate()                        = default;
+    virtual void on_connect(const error& ec)          = 0;
+    virtual void on_disconnect(const error& ec)       = 0;
+    virtual void on_new_frame_size(int w, int h)      = 0;
+    virtual void on_frame_update(const frame_buffer&) = 0;
+    virtual void on_keyboard_led_state(int state);
+    virtual void on_text_chat(const proto::rfbTextChatType& type, std::string_view message);
+    virtual void on_cut_text_utf8(std::string_view message);
+    virtual void on_cut_text(std::string_view message);
+    virtual void on_bell();
+    virtual void
+    on_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask);
+    virtual void on_cursor_pos(int x, int y);
+    virtual void on_status_changed(const client::status& s);
+
+    virtual std::string get_auth_password();
+    virtual proto::rfbPixelFormat want_format();
+    virtual proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths);
 };
 } // namespace libvnc

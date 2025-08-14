@@ -39,6 +39,10 @@ void client_delegate::on_cursor_pos(int x, int y)
 {
 }
 
+void client_delegate::on_status_changed(const client::status& s)
+{
+}
+
 libvnc::proto::rfbAuthScheme
 client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
 {
@@ -122,6 +126,11 @@ void client::set_quality_level(int level)
 const frame_buffer& client::frame() const
 {
     return impl_->frame();
+}
+
+client::status client::current_status() const
+{
+    return impl_->status_;
 }
 
 bool client::send_frame_encodings(const std::vector<std::string>& encodings)

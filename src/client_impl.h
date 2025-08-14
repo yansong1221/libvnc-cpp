@@ -60,6 +60,7 @@ public:
 
 private:
     boost::asio::awaitable<error> async_connect_rfbserver();
+    boost::asio::awaitable<error> async_handshake();
     boost::asio::awaitable<error> async_authenticate();
     boost::asio::awaitable<error> async_client_init();
 
@@ -83,6 +84,7 @@ private:
         return send_msg_to_server_buffers(ID, bufs);
     }
     void send_raw_data(std::vector<uint8_t>&& data);
+    void commit_status(const client::status& s);
 
 protected:
     void soft_cursor_lock_area(int x, int y, int w, int h) override;
@@ -107,6 +109,7 @@ private:
     boost::asio::awaitable<error> on_rfbResizeFrameBuffer();
     boost::asio::awaitable<error> on_rfbPalmVNCReSizeFrameBuffer();
 
+private:
     template<typename T, typename... _Types>
         requires std::derived_from<T, encoding::codec>
     void register_encoding(_Types&&... _Args)
@@ -114,25 +117,29 @@ private:
         auto codec = std::make_unique<T>(std::forward<_Types>(_Args)...);
         codecs_.push_back(std::move(codec));
     }
-
+    template<class _Fx, class... _Types>
+    void register_message(uint8_t ID, _Fx&& _Func, _Types&&... _Args)
+    {
+        message_map_.emplace(ID,
+                             std::bind(std::forward<_Fx>(_Func), std::forward<_Types>(_Args)...));
+    }
 
 public:
     boost::asio::strand<boost::asio::any_io_executor> strand_;
     boost::asio::ip::tcp::resolver resolver_;
     boost::asio::ip::tcp::socket socket_;
     std::deque<std::vector<uint8_t>> send_que_;
-    bool is_initialization_completed_ = false;
 
-    std::string host_        = "127.0.0.1";
-    uint16_t port_           = 5900;
-    bool share_desktop_      = true;
-    uint32_t compress_level_ = 3;
-    uint32_t quality_level_  = 5;
+    std::string host_               = "127.0.0.1";
+    uint16_t port_                  = 5900;
+    bool share_desktop_             = true;
+    std::atomic_int compress_level_ = 3;
+    std::atomic_int quality_level_  = 5;
 
     frame_buffer frame_;
 
     std::string desktop_name_;
-    int current_keyboard_led_state_ = 0;
+    std::atomic_int current_keyboard_led_state_ = 0;
 
     std::vector<proto::rfbExtDesktopScreen> screens_;
 
@@ -147,6 +154,7 @@ public:
     std::map<uint8_t, message_handler> message_map_;
 
     std::bitset<32> extendedClipboardServerCapabilities_;
+    std::atomic<client::status> status_ = client::status::closed;
 };
 
 
