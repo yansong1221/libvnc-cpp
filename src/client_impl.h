@@ -52,6 +52,8 @@ public:
 
     bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
 
+    bool send_set_monitor(int nbr);
+
     void send_framebuffer_update_request(int x, int y, int w, int h, bool incremental);
     void send_framebuffer_update_request(bool incremental) override;
 
@@ -108,6 +110,7 @@ private:
     boost::asio::awaitable<error> on_rfbXvp();
     boost::asio::awaitable<error> on_rfbResizeFrameBuffer();
     boost::asio::awaitable<error> on_rfbPalmVNCReSizeFrameBuffer();
+    boost::asio::awaitable<error> on_rfbMonitorInfo();
 
 private:
     template<typename T, typename... _Types>
@@ -155,6 +158,8 @@ public:
 
     std::bitset<32> extendedClipboardServerCapabilities_;
     std::atomic<client::status> status_ = client::status::closed;
+
+    std::atomic_uint nbrMonitors_ = 0;
 };
 
 

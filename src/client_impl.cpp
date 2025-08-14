@@ -77,6 +77,8 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
     register_message(proto::rfbResizeFrameBuffer, &client_impl::on_rfbResizeFrameBuffer, this);
     register_message(
         proto::rfbPalmVNCReSizeFrameBuffer, &client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
+    register_message(proto::rfbMonitorInfo, &client_impl::on_rfbMonitorInfo, this);
+
 
     register_encoding<encoding::zlib>();
     register_encoding<encoding::ultra>();
@@ -325,6 +327,18 @@ bool client_impl::send_xvp_msg(uint8_t version, proto::rfbXvpCode code)
     xvp.version = version;
     xvp.code    = code;
     return send_msg_to_server(proto::rfbXvp, &xvp, sizeof(xvp));
+}
+
+bool client_impl::send_set_monitor(int nbr)
+{
+    proto::rfbMonitorMsg mm {};
+    mm.pad2 = 0;
+    mm.pad3 = 0;
+    mm.nbr  = nbr;
+    if (nbr < nbrMonitors_) {
+        return send_msg_to_server(proto::rfbSetMonitor, &mm, sizeof(mm));
+    }
+    return false;
 }
 
 bool client_impl::send_key_event(uint32_t key, bool down)
@@ -636,6 +650,7 @@ bool client_impl::send_frame_encodings(const std::vector<std::string>& encodings
 #ifdef LIBVNC_HAVE_LIBZ
     encs.emplace_back(proto::rfbEncodingExtendedClipboard);
 #endif
+    encs.emplace_back(proto::rfbEncodingMonitorInfo);
 
     proto::rfbSetEncodingsMsg msg {};
     msg.pad        = 0;
@@ -1080,6 +1095,21 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbPalmVNCReSizeFrameBuffe
         co_return error::make_error(ec);
 
     handle_resize_client_buffer(msg.buffer_w.value(), msg.buffer_h.value());
+    co_return error {};
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbMonitorInfo()
+{
+    boost::system::error_code ec;
+    proto::rfbMonitorMsg msg {};
+
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    nbrMonitors_ = msg.nbr.value();
+    supported_messages_.set_client2server(proto::rfbSetMonitor);
     co_return error {};
 }
 

@@ -108,6 +108,15 @@ enum rfbEncoding : uint32_t
     rfbEncodingSupportedMessages  = 0xFFFE0001,
     rfbEncodingSupportedEncodings = 0xFFFE0002,
     rfbEncodingServerIdentity     = 0xFFFE0003,
+
+
+    // UltraVNC viewer requests server state updates
+    rfbEncodingServerState       = 0xFFFF8000,
+    rfbEncodingEnableKeepAlive   = 0xFFFF8001,
+    rfbEncodingFTProtocolVersion = 0xFFFF8002,
+    rfbEncodingpseudoSession     = 0xFFFF8003,
+    rfbEncodingEnableIdleTime    = 0xFFFF8004,
+    rfbEncodingMonitorInfo       = 0xFFFF8005,
 };
 
 enum rfbServerToClientMsg : uint8_t
@@ -514,6 +523,14 @@ struct rfbSetServerInputMsg
 {
     boost::endian::big_uint8_buf_t status; /* Scale value 1<sv<n */
     boost::endian::big_uint16_buf_t pad;
+};
+
+
+struct rfbMonitorMsg
+{
+    boost::endian::big_uint8_buf_t nbr;
+    boost::endian::big_uint8_buf_t pad2;
+    boost::endian::big_uint8_buf_t pad3;
 };
 
 } // namespace libvnc::proto

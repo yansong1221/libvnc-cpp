@@ -203,6 +203,11 @@ bool client::send_xvp_msg(uint8_t version, proto::rfbXvpCode code)
     return impl_->send_xvp_msg(version, code);
 }
 
+bool client::send_set_monitor(int nbr)
+{
+    return impl_->send_set_monitor(nbr);
+}
+
 int client::current_keyboard_led_state() const
 {
     return impl_->current_keyboard_led_state();

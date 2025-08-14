@@ -38,6 +38,7 @@ public:
 
     const frame_buffer& frame() const;
     status current_status() const;
+    int current_keyboard_led_state() const;
 
     bool send_frame_encodings(const std::vector<std::string>& encodings);
     bool send_scale_setting(int scale);
@@ -57,8 +58,8 @@ public:
     bool permit_server_input(bool enabled);
 
     bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
+    bool send_set_monitor(int nbr);
 
-    int current_keyboard_led_state() const;
 
 private:
     client(const client&)            = delete;
