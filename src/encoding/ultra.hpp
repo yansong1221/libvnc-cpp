@@ -168,7 +168,7 @@ public:
 
         /* Put the uncompressed contents of the update on the screen. */
         auto ptr = decompress_buffer_.data();
-        for (int i = 0; i < numCacheRects; i++) {
+        for (std::size_t i = 0; i < numCacheRects; i++) {
             boost::endian::big_uint16_buf_t sx, sy, sw, sh;
             boost::endian::big_uint32_buf_t se;
 
@@ -182,7 +182,7 @@ public:
             ptr += 2;
             memcpy((char*)&se, ptr, 4);
             ptr += 4;
-      
+
             if (se.value() == proto::rfbEncodingRaw) {
                 frame.got_bitmap(ptr, sx.value(), sy.value(), sw.value(), sh.value());
                 ptr += ((sw.value() * sh.value()) * byte_pixel);

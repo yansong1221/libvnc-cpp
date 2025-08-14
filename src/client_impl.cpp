@@ -236,7 +236,7 @@ bool client_impl::send_client_cut_text_utf8(std::string_view text)
         z_os.write((char*)&text_size, sizeof(text_size));
         z_os.write(text.data(), text.size());
     }
-    int len = sizeof(flags) + compress_buffer.size();
+    int len = static_cast<int>(sizeof(flags) + compress_buffer.size());
 
     proto::rfbClientCutTextMsg cct {};
     cct.pad1   = 0;
@@ -355,7 +355,7 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
     }
 
     int major, minor;
-    if (sscanf(pv, proto::rfbProtocolVersionFormat, &major, &minor) != 2) {
+    if (sscanf_s(pv, proto::rfbProtocolVersionFormat, &major, &minor) != 2) {
         spdlog::error("Not a valid VNC server ({})", pv);
         co_return error::make_error(
             boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type));
@@ -405,7 +405,7 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
                  proto::rfbProtocolMajorVersion,
                  proto::rfbProtocolMinorVersion);
 
-    sprintf(pv, proto::rfbProtocolVersionFormat, major_, minor_);
+    sprintf_s(pv, proto::rfbProtocolVersionFormat, major_, minor_);
     co_await boost::asio::async_write(
         socket_, boost::asio::buffer(&pv, proto::sz_rfbProtocolVersionMsg), net_awaitable[ec]);
 
@@ -559,7 +559,6 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     spdlog::info("Connected to VNC server, using protocol version {}.{}", major_, minor_);
     spdlog::info("VNC server default format:");
     si.format.print();
-
     frame_.init(si.framebufferWidth.value(), si.framebufferHeight.value(), si.format);
 
     desktop_name_ = std::move(name);
@@ -624,7 +623,7 @@ bool client_impl::send_frame_encodings(const std::vector<std::string>& encodings
 
     proto::rfbSetEncodingsMsg msg {};
     msg.pad        = 0;
-    msg.nEncodings = encs.size();
+    msg.nEncodings = static_cast<uint16_t>(encs.size());
 
     return send_msg_to_server_buffers(
         proto::rfbSetEncodings, boost::asio::buffer(&msg, sizeof(msg)), encs);
@@ -636,11 +635,11 @@ bool client_impl::send_scale_setting(int scale)
     ssm.scale = scale;
     ssm.pad   = 0;
 
-    if (supported_messages_.supports_client2server(proto::rfbSetScale)) {
+    if (supported_messages_.test_client2server(proto::rfbSetScale)) {
         if (!send_msg_to_server(proto::rfbSetScale, &ssm, sizeof(ssm)))
             return false;
     }
-    if (supported_messages_.supports_client2server(proto::rfbPalmVNCSetScaleFactor)) {
+    if (supported_messages_.test_client2server(proto::rfbPalmVNCSetScaleFactor)) {
         if (!send_msg_to_server(proto::rfbPalmVNCSetScaleFactor, &ssm, sizeof(ssm)))
             return false;
     }
@@ -656,7 +655,7 @@ bool client_impl::send_ext_desktop_size(const std::vector<proto::rfbExtDesktopSc
     sdm.pad1            = 0;
     sdm.width           = screens.front().width;
     sdm.height          = screens.front().height;
-    sdm.numberOfScreens = screens.size();
+    sdm.numberOfScreens = static_cast<uint8_t>(screens.size());
     sdm.pad2            = 0;
 
     return send_msg_to_server_buffers(
@@ -757,7 +756,7 @@ bool client_impl::send_msg_to_server(const proto::rfbClientToServerMsg& ID,
 bool client_impl::send_msg_to_server_buffers(const proto::rfbClientToServerMsg& ID,
                                              const std::vector<boost::asio::const_buffer>& buffers)
 {
-    if (!supported_messages_.supports_client2server(ID)) {
+    if (!supported_messages_.test_client2server(ID)) {
         spdlog::warn("Unsupported client2server protocol: {}", (int)ID);
         return false;
     }
@@ -845,8 +844,11 @@ void client_impl::handle_ext_desktop_screen(const std::vector<proto::rfbExtDeskt
     supported_messages_.set_client2server(proto::rfbSetDesktopSize);
 }
 
-void client_impl::resize_client_buffer(int width, int height)
+void client_impl::handle_resize_client_buffer(int width, int height)
 {
+    if (handler_)
+        handler_->on_new_frame_size(width, height);
+
     frame_.set_size(width, height);
 
     send_framebuffer_update_request(false);
@@ -962,7 +964,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbServerCutText()
         // client->extendedClipboardServerCapabilities |=
         //     rfbExtendedClipboard_Text; /* for now, only text */
         extendedClipboardServerCapabilities_.reset();
-        extendedClipboardServerCapabilities_.set(proto::rfbExtendedClipboard_Text);
+        extendedClipboardServerCapabilities_ |= proto::rfbExtendedClipboard_Text;
         co_return error {};
     }
 
@@ -1061,7 +1063,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbResizeFrameBuffer()
     if (ec)
         co_return error::make_error(ec);
 
-    resize_client_buffer(msg.framebufferWidth.value(), msg.framebufferHeight.value());
+    handle_resize_client_buffer(msg.framebufferWidth.value(), msg.framebufferHeight.value());
     co_return error {};
 }
 
@@ -1074,7 +1076,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbPalmVNCReSizeFrameBuffe
     if (ec)
         co_return error::make_error(ec);
 
-    resize_client_buffer(msg.buffer_w.value(), msg.buffer_h.value());
+    handle_resize_client_buffer(msg.buffer_w.value(), msg.buffer_h.value());
     co_return error {};
 }
 

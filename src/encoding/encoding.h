@@ -22,6 +22,7 @@ public:
     virtual void handle_supported_messages(const proto::rfbSupportedMessages& messages)         = 0;
     virtual void
     handle_ext_desktop_screen(const std::vector<proto::rfbExtDesktopScreen>& screens) = 0;
+    virtual void handle_resize_client_buffer(int w, int h)                            = 0;
 };
 
 class codec

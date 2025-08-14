@@ -38,6 +38,11 @@ void Widget::on_frame_update(const libvnc::frame_buffer& buffer)
     this->update();
 }
 
+void Widget::on_new_frame_size(int w, int h)
+{
+
+}
+
 std::string Widget::get_auth_password() const
 {
     return "123456";

@@ -94,8 +94,7 @@ protected:
     void handle_server_identity(std::string_view text) override;
     void handle_supported_messages(const proto::rfbSupportedMessages& messages) override;
     void handle_ext_desktop_screen(const std::vector<proto::rfbExtDesktopScreen>& screens) override;
-
-    void resize_client_buffer(int width, int height);
+    void handle_resize_client_buffer(int width, int height);
 
 private:
     boost::asio::awaitable<error> on_rfbFramebufferUpdate();

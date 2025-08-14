@@ -14,6 +14,7 @@ public:
     virtual ~client_delegate()                        = default;
     virtual void on_connect(const error& ec)          = 0;
     virtual void on_disconnect(const error& ec)       = 0;
+    virtual void on_new_frame_size(int w, int h)      = 0;
     virtual void on_frame_update(const frame_buffer&) = 0;
     virtual void on_keyboard_led_state(int state);
     virtual void on_text_chat(const proto::rfbTextChatType& type, std::string_view message);

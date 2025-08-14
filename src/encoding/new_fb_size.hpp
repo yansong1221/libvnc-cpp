@@ -19,8 +19,7 @@ public:
                                          frame_buffer& buffer,
                                          std::shared_ptr<frame_op> op) override
     {
-        buffer.set_size(rect.x.value(), rect.y.value());
-        op->send_framebuffer_update_request(false);
+        op->handle_resize_client_buffer(rect.x.value(), rect.y.value());
         co_return error {};
     }
 };
