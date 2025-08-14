@@ -11,7 +11,7 @@ class server_identity : public codec
 public:
     std::string codec_name() const override { return "server-identity"; }
 
-    void reset() override { }
+    void init() override { }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingServerIdentity;

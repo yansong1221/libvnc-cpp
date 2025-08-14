@@ -9,7 +9,7 @@ namespace libvnc::encoding {
 class raw : public frame_codec
 {
 public:
-    void reset() override { }
+    void init() override { }
     std::string codec_name() const override { return "raw"; }
     proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRaw; }
 

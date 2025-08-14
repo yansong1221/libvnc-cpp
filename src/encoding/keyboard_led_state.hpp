@@ -7,7 +7,7 @@ namespace libvnc::encoding {
 class keyboard_led_state : public codec
 {
 public:
-    void reset() override { }
+    void init() override { }
     std::string codec_name() const override { return "keyboard-led-state"; }
     proto::rfbEncoding encoding_code() const override
     {

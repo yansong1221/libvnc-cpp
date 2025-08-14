@@ -7,7 +7,7 @@ namespace libvnc::encoding {
 class new_fb_size : public codec
 {
 public:
-    void reset() override { }
+    void init() override { }
     std::string codec_name() const override { return "new-fb-size"; }
     proto::rfbEncoding encoding_code() const override
     {

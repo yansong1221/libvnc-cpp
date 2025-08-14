@@ -12,7 +12,7 @@ namespace libvnc::encoding {
 class ultra : public frame_codec
 {
 public:
-    void reset() override { }
+    void init() override { }
     std::string codec_name() const override { return "ultra"; }
     bool request_last_rect_encoding() const override { return true; }
     proto::rfbEncoding encoding_code() const override
@@ -97,7 +97,7 @@ private:
 class ultra_zip : public frame_codec
 {
 public:
-    void reset() override { }
+    void init() override { }
     std::string codec_name() const override { return "ultrazip"; }
     bool request_last_rect_encoding() const override { return true; }
     proto::rfbEncoding encoding_code() const override

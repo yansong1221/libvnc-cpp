@@ -7,7 +7,7 @@ namespace libvnc::encoding {
 class pointer_pos : public codec
 {
 public:
-    void reset() override { }
+    void init() override { }
     std::string codec_name() const override { return "pointer-pos"; }
     proto::rfbEncoding encoding_code() const override
     {

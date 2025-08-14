@@ -11,7 +11,7 @@ class ext_desktop_size : public codec
 public:
     std::string codec_name() const override { return "ext-desktop-size"; }
 
-    void reset() override { }
+    void init() override { }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingExtDesktopSize;

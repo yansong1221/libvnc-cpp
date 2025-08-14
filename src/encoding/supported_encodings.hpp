@@ -11,7 +11,7 @@ class supported_encodings : public codec
 public:
     std::string codec_name() const override { return "supported-encodings"; }
 
-    void reset() override { }
+    void init() override { }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingSupportedEncodings;

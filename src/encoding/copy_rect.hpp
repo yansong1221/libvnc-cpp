@@ -11,7 +11,7 @@ class copy_rect : public frame_codec
 public:
     std::string codec_name() const override { return "copyrect"; }
 
-    void reset() override { }
+    void init() override { }
     proto::rfbEncoding encoding_code() const override
     {
         return proto::rfbEncoding::rfbEncodingCopyRect;

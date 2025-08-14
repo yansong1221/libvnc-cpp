@@ -126,26 +126,33 @@ void client_impl::start()
 
 boost::asio::awaitable<libvnc::error> client_impl::co_start()
 {
+    close();
+
     boost::system::error_code ec;
     is_initialization_completed_ = false;
 
-    error err = co_await async_connect_rfbserver();
-    handler_.on_connect(err);
-    if (err)
+    if (error err = co_await async_connect_rfbserver(); err) {
+        close();
+        handler_.on_connect(err);
         co_return err;
+    }
+    handler_.on_connect(error {});
+
+    for (const auto& codec : codecs_)
+        codec->init();
 
     is_initialization_completed_ = true;
     send_framebuffer_update_request(false);
 
     auto remote_endp = socket_.remote_endpoint(ec);
 
-    err = co_await server_message_loop();
-    if (err) {
-        spdlog::error("Disconnect from the rbfserver [{}:{}] : {}",
-                      remote_endp.address().to_string(),
-                      remote_endp.port(),
-                      err.message());
-    }
+    auto err = co_await server_message_loop();
+    spdlog::warn("Disconnect from the rbfserver [{}:{}] : {}",
+                 remote_endp.address().to_string(),
+                 remote_endp.port(),
+                 err.message());
+
+    close();
     is_initialization_completed_ = false;
 
     handler_.on_disconnect(err);
@@ -316,8 +323,6 @@ bool client_impl::send_extended_key_event(uint32_t keysym, uint32_t keycode, boo
 
 boost::asio::awaitable<error> client_impl::async_connect_rfbserver()
 {
-    close();
-
     // connect
     boost::system::error_code ec;
     auto endpoints =

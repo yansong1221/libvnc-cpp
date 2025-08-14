@@ -8,7 +8,7 @@ namespace libvnc::encoding {
 class cursor : public codec
 {
 public:
-    void reset() override { }
+    void init() override { }
     boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
                                          const proto::rfbRectangle& rect,
                                          frame_buffer& buffer,

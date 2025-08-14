@@ -56,7 +56,7 @@ class hextile : public frame_codec
     constexpr static uint8_t rfbHextileSubrectsColoured    = (1 << 4);
 
 public:
-    void reset() override { }
+    void init() override { }
     std::string codec_name() const override { return "hextile"; }
     proto::rfbEncoding encoding_code() const override
     {

@@ -29,7 +29,7 @@ class codec
 {
 public:
     virtual ~codec()                                 = default;
-    virtual void reset()                             = 0;
+    virtual void init()                              = 0;
     virtual proto::rfbEncoding encoding_code() const = 0;
     virtual std::string codec_name() const           = 0;
     virtual bool is_frame_codec() const { return false; }

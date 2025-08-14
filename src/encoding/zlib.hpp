@@ -10,11 +10,11 @@ namespace libvnc::encoding {
 class zlib : public frame_codec
 {
 public:
-    zlib()
-        : z_is_(&buffer_, zstr::default_buff_size, false, 15)
+    void init() override
     {
+        buffer_.consume(buffer_.size());
+        z_is_ = std::make_unique<zstr::istream>(&buffer_, zstr::default_buff_size, false, 15);
     }
-    void reset() override { }
     std::string codec_name() const override { return "zlib"; }
     proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZlib; }
     bool request_compress_level() const override { return true; }
@@ -51,19 +51,22 @@ public:
 
         for (int i = 0; i < h; ++i) {
             auto ptr = frame.data(x, y + i);
-            z_is_.read((char*)ptr, row_bytes);
-            auto read_count = z_is_.gcount();
+            z_is_->read((char*)ptr, row_bytes);
+            auto read_count = z_is_->gcount();
             if (read_count != row_bytes) {
-                bool eof = z_is_.eof();
+                bool eof = z_is_->eof();
                 auto sz  = buffer_.size();
                 co_return error::make_error(custom_error::frame_error, "zlib error");
             }
         }
+        if (buffer_.size() != 0)
+            co_return error::make_error(custom_error::frame_error, "zlib error");
+
         co_return error {};
     }
 
 private:
     boost::asio::streambuf buffer_;
-    zstr::istream z_is_;
+    std::unique_ptr<zstr::istream> z_is_;
 };
 } // namespace libvnc::encoding
