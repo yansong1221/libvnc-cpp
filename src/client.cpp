@@ -43,6 +43,10 @@ void client_delegate::on_status_changed(const client::status& s)
 {
 }
 
+void client_delegate::on_monitor_info(int count)
+{
+}
+
 libvnc::proto::rfbAuthScheme
 client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
 {
@@ -79,12 +83,12 @@ void client_delegate::on_cut_text(std::string_view message)
 client::client(boost::asio::io_context& executor, client_delegate* handler)
     : impl_(std::make_shared<client_impl>(executor.get_executor()))
 {
-    impl_->set_delegate(handler);
+    impl_->handler_.reset(handler);
 }
 
 client::~client()
 {
-    impl_->set_delegate(nullptr);
+    impl_->handler_.reset(nullptr);
     impl_->close();
 }
 
@@ -210,7 +214,12 @@ bool client::send_set_monitor(int nbr)
 
 int client::current_keyboard_led_state() const
 {
-    return impl_->current_keyboard_led_state();
+    return impl_->current_keyboard_led_state_;
+}
+
+int client::monitors() const
+{
+    return impl_->nbrMonitors_;
 }
 
 } // namespace libvnc

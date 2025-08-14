@@ -58,8 +58,9 @@ public:
     bool permit_server_input(bool enabled);
 
     bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
-    bool send_set_monitor(int nbr);
 
+    bool send_set_monitor(int nbr);
+    int monitors() const;
 
 private:
     client(const client&)            = delete;
@@ -86,6 +87,7 @@ public:
     on_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask);
     virtual void on_cursor_pos(int x, int y);
     virtual void on_status_changed(const client::status& s);
+    virtual void on_monitor_info(int monitors);
 
     virtual std::string get_auth_password();
     virtual proto::rfbPixelFormat want_format();

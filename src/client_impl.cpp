@@ -22,6 +22,7 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/detached.hpp>
+#include <boost/asio/experimental/awaitable_operators.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
 #include <filesystem>
@@ -78,10 +79,11 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
     register_message(
         proto::rfbPalmVNCReSizeFrameBuffer, &client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
     register_message(proto::rfbMonitorInfo, &client_impl::on_rfbMonitorInfo, this);
+    register_message(proto::rfbKeepAlive, &client_impl::on_rfbKeepAlive, this);
 
 
-    register_encoding<encoding::zlib>();
     register_encoding<encoding::ultra>();
+    register_encoding<encoding::zlib>();
     register_encoding<encoding::ultra_zip>();
     register_encoding<encoding::copy_rect>();
     register_encoding<encoding::co_rre>();
@@ -174,7 +176,10 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
     boost::system::error_code ec;
     auto remote_endp = socket_.remote_endpoint(ec);
 
-    auto err = co_await server_message_loop();
+    using namespace boost::asio::experimental::awaitable_operators;
+    auto run_result = co_await (server_message_loop() || server_keepalive_loop());
+    error err       = std::visit([](auto&& arg) { return arg; }, run_result);
+
     spdlog::warn("Disconnect from the rbfserver [{}:{}] : {}",
                  remote_endp.address().to_string(),
                  remote_endp.port(),
@@ -182,17 +187,7 @@ boost::asio::awaitable<libvnc::error> client_impl::co_start()
 
     close();
     handler_.on_disconnect(err);
-    co_return err;
-}
-
-void client_impl::set_delegate(client_delegate* handler)
-{
-    handler_.reset(handler);
-}
-
-int client_impl::current_keyboard_led_state() const
-{
-    return current_keyboard_led_state_;
+    co_return error {};
 }
 
 void client_impl::send_framebuffer_update_request(int x, int y, int w, int h, bool incremental)
@@ -335,7 +330,7 @@ bool client_impl::send_set_monitor(int nbr)
     mm.pad2 = 0;
     mm.pad3 = 0;
     mm.nbr  = nbr;
-    if (nbr < nbrMonitors_) {
+    if (nbr <= nbrMonitors_) {
         return send_msg_to_server(proto::rfbSetMonitor, &mm, sizeof(mm));
     }
     return false;
@@ -651,6 +646,7 @@ bool client_impl::send_frame_encodings(const std::vector<std::string>& encodings
     encs.emplace_back(proto::rfbEncodingExtendedClipboard);
 #endif
     encs.emplace_back(proto::rfbEncodingMonitorInfo);
+    encs.emplace_back(proto::rfbEncodingEnableKeepAlive);
 
     proto::rfbSetEncodingsMsg msg {};
     msg.pad        = 0;
@@ -715,6 +711,24 @@ boost::asio::awaitable<error> client_impl::server_message_loop()
 
         co_return err;
     }
+}
+
+boost::asio::awaitable<error> client_impl::server_keepalive_loop()
+{
+    boost::system::error_code ec;
+    boost::asio::steady_timer timer(co_await boost::asio::this_coro::executor);
+    for (;;) {
+        using namespace std::chrono_literals;
+        timer.expires_after(1s);
+        co_await timer.async_wait(net_awaitable[ec]);
+
+        if (ec)
+            co_return error::make_error(ec);
+
+        if (supported_messages_.test_client2server(proto::rfbKeepAlive))
+            send_msg_to_server_buffers(proto::rfbKeepAlive);
+    }
+    co_return error {};
 }
 
 boost::asio::awaitable<error> client_impl::read_auth_result()
@@ -1110,6 +1124,13 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbMonitorInfo()
 
     nbrMonitors_ = msg.nbr.value();
     supported_messages_.set_client2server(proto::rfbSetMonitor);
+    handler_.on_monitor_info(nbrMonitors_);
+    co_return error {};
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbKeepAlive()
+{
+    supported_messages_.set_client2server(proto::rfbKeepAlive);
     co_return error {};
 }
 

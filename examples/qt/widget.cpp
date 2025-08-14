@@ -11,6 +11,7 @@ Widget::Widget(QWidget* parent)
     timer->start();
     connect(timer, &QTimer::timeout, this, [this]() { ioc_.poll(); });
     client_.set_host("127.0.0.1");
+    //client_.set_host("100.64.0.15");
     client_.start();
 }
 
@@ -20,6 +21,7 @@ Widget::~Widget()
 
 void Widget::on_connect(const libvnc::error& ec)
 {
+    client_.send_set_monitor(1);
 }
 
 void Widget::on_disconnect(const libvnc::error& ec)

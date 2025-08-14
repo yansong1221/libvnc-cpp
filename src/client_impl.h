@@ -1,5 +1,5 @@
 #pragma once
-#include "client_delegate_wrapper.hpp"
+#include "client_delegate_proxy.hpp"
 #include "encoding/encoding.h"
 #include "libvnc-cpp/client.h"
 #include "libvnc-cpp/error.h"
@@ -27,11 +27,7 @@ public:
 
     void close();
     void start();
-    boost::asio::awaitable<error> co_start();
 
-    void set_delegate(client_delegate* handler);
-
-    int current_keyboard_led_state() const;
 
     bool send_format(const proto::rfbPixelFormat& format);
     bool send_frame_encodings(const std::vector<std::string>& encodings);
@@ -61,12 +57,14 @@ public:
 
 
 private:
+    boost::asio::awaitable<error> co_start();
     boost::asio::awaitable<error> async_connect_rfbserver();
     boost::asio::awaitable<error> async_handshake();
     boost::asio::awaitable<error> async_authenticate();
     boost::asio::awaitable<error> async_client_init();
 
     boost::asio::awaitable<error> server_message_loop();
+    boost::asio::awaitable<error> server_keepalive_loop();
 
     boost::asio::awaitable<error> read_auth_result();
     boost::asio::awaitable<error> read_error_reason();
@@ -111,6 +109,7 @@ private:
     boost::asio::awaitable<error> on_rfbResizeFrameBuffer();
     boost::asio::awaitable<error> on_rfbPalmVNCReSizeFrameBuffer();
     boost::asio::awaitable<error> on_rfbMonitorInfo();
+    boost::asio::awaitable<error> on_rfbKeepAlive();
 
 private:
     template<typename T, typename... _Types>
@@ -149,7 +148,7 @@ public:
     /** negotiated protocol version */
     int major_ = proto::rfbProtocolMajorVersion, minor_ = proto::rfbProtocolMinorVersion;
 
-    client_delegate_wrapper handler_;
+    client_delegate_proxy handler_;
     supported_messages supported_messages_;
 
     std::vector<std::unique_ptr<encoding::codec>> codecs_;

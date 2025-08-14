@@ -3,7 +3,7 @@
 #include <shared_mutex>
 
 namespace libvnc {
-class client_delegate_wrapper
+class client_delegate_proxy
 {
 public:
     void reset(client_delegate* handler)
@@ -51,6 +51,7 @@ public:
     {
         return invoke(&client_delegate::on_status_changed, s);
     }
+    auto on_monitor_info(int count) { return invoke(&client_delegate::on_monitor_info, count); }
 
 
     template<typename Func, typename... Args>
