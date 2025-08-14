@@ -6,7 +6,7 @@
 namespace libvnc {
 
 
-std::string client_delegate::get_auth_password() const
+std::string client_delegate::get_auth_password()
 {
     std::string password;
     std::cout << "Enter password: ";
@@ -14,7 +14,7 @@ std::string client_delegate::get_auth_password() const
     return password;
 }
 
-proto::rfbPixelFormat client_delegate::want_format() const
+proto::rfbPixelFormat client_delegate::want_format()
 {
     libvnc::proto::rfbPixelFormat format(8, 3, 4);
     format.redShift   = 16;
@@ -29,7 +29,7 @@ void client_delegate::on_bell()
 }
 
 libvnc::proto::rfbAuthScheme
-client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths) const
+client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
 {
     if (auths.empty())
         return proto::rfbConnFailed;
@@ -111,11 +111,6 @@ void client::set_quality_level(int level)
 const frame_buffer& client::frame() const
 {
     return impl_->frame();
-}
-
-bool client::send_format(const proto::rfbPixelFormat& format)
-{
-    return impl_->send_format(format);
 }
 
 bool client::send_frame_encodings(const std::vector<std::string>& encodings)

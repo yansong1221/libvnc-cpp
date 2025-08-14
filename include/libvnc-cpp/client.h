@@ -22,10 +22,9 @@ public:
     virtual void on_cut_text(std::string_view message);
     virtual void on_bell();
 
-    virtual std::string get_auth_password() const;
-    virtual proto::rfbPixelFormat want_format() const;
-    virtual proto::rfbAuthScheme
-    select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths) const;
+    virtual std::string get_auth_password();
+    virtual proto::rfbPixelFormat want_format();
+    virtual proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths);
 };
 
 class client_impl;
@@ -47,7 +46,6 @@ public:
 
     const frame_buffer& frame() const;
 
-    bool send_format(const proto::rfbPixelFormat& format);
     bool send_frame_encodings(const std::vector<std::string>& encodings);
     bool send_scale_setting(int scale);
     bool send_ext_desktop_size(const std::vector<proto::rfbExtDesktopScreen>& screens);

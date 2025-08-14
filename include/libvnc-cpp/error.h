@@ -20,18 +20,13 @@ public:
     };
 
     custom_error() = default;
-    custom_error(code c, std::string msg)
-        : code_(c)
-        , message_(std::move(msg))
-    {
-    }
+    custom_error(code c, std::string msg);
 
-    bool has_error() const noexcept { return code_ != none; }
+    bool has_error() const noexcept;
     explicit operator bool() const noexcept { return has_error(); }
 
-    int value() const noexcept { return static_cast<int>(code_); }
-    const std::string& message() const noexcept { return message_; }
-
+    int value() const noexcept;
+    const std::string& message() const noexcept;
 
 private:
     code code_ = none;

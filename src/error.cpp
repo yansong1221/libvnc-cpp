@@ -2,6 +2,28 @@
 #include <spdlog/spdlog.h>
 
 namespace libvnc {
+
+custom_error::custom_error(code c, std::string msg)
+    : code_(c)
+    , message_(std::move(msg))
+{
+}
+
+bool custom_error::has_error() const noexcept
+{
+    return code_ != none;
+}
+
+int custom_error::value() const noexcept
+{
+    return static_cast<int>(code_);
+}
+
+const std::string& custom_error::message() const noexcept
+{
+    return message_;
+}
+
 error::error(const boost::system::error_code& system_err)
     : error_(system_err)
 {

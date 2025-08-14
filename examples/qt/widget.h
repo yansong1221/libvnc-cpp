@@ -18,8 +18,6 @@ protected:
     void on_frame_update(const libvnc::frame_buffer& buffer) override;
     void on_new_frame_size(int w, int h) override;
 
-    std::string get_auth_password() const override;
-
     void paintEvent(QPaintEvent*) override;
 
 private:

@@ -1,4 +1,5 @@
 #pragma once
+#include "client_delegate_wrapper.hpp"
 #include "encoding/encoding.h"
 #include "libvnc-cpp/client.h"
 #include "libvnc-cpp/error.h"
@@ -138,7 +139,7 @@ public:
     /** negotiated protocol version */
     int major_ = proto::rfbProtocolMajorVersion, minor_ = proto::rfbProtocolMinorVersion;
 
-    client_delegate* handler_ = nullptr;
+    client_delegate_wrapper handler_;
     supported_messages supported_messages_;
 
     std::vector<std::unique_ptr<encoding::codec>> codecs_;
