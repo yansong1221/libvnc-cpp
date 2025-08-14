@@ -17,7 +17,10 @@ protected:
     void on_disconnect(const libvnc::error& ec) override;
     void on_frame_update(const libvnc::frame_buffer& buffer) override;
     void on_new_frame_size(int w, int h) override;
-
+    void on_cursor_shape(int xhot,
+                         int yhot,
+                         const libvnc::frame_buffer& rc_source,
+                         const uint8_t* rc_mask) override;
     void paintEvent(QPaintEvent*) override;
 
 private:

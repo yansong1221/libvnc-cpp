@@ -42,6 +42,11 @@ public:
     {
         return invoke(&client_delegate::on_text_chat, type, message);
     }
+    auto on_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask)
+    {
+        return invoke(&client_delegate::on_cursor_shape, xhot, yhot, rc_source, rc_mask);
+    }
+    auto on_cursor_pos(int x, int y) { return invoke(&client_delegate::on_cursor_pos, x, y); }
 
 
     template<typename Func, typename... Args>

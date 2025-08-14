@@ -90,7 +90,7 @@ protected:
                           int yhot,
                           const frame_buffer& rc_source,
                           const uint8_t* rc_mask) override;
-    void handle_cursor_pos(int x, int y) override { }
+    void handle_cursor_pos(int x, int y) override;
     void handle_keyboard_led_state(int state) override;
     void handle_server_identity(std::string_view text) override;
     void handle_supported_messages(const proto::rfbSupportedMessages& messages) override;

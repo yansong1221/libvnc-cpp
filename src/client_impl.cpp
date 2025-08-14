@@ -803,6 +803,12 @@ void client_impl::got_cursor_shape(int xhot,
                                    const frame_buffer& rc_source,
                                    const uint8_t* rc_mask)
 {
+    handler_.on_cursor_shape(xhot, yhot, rc_source, rc_mask);
+}
+
+void client_impl::handle_cursor_pos(int x, int y)
+{
+    handler_.on_cursor_pos(x, y);
 }
 
 void client_impl::handle_keyboard_led_state(int state)

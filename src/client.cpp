@@ -28,6 +28,17 @@ void client_delegate::on_bell()
     return;
 }
 
+void client_delegate::on_cursor_shape(int xhot,
+                                      int yhot,
+                                      const frame_buffer& rc_source,
+                                      const uint8_t* rc_mask)
+{
+}
+
+void client_delegate::on_cursor_pos(int x, int y)
+{
+}
+
 libvnc::proto::rfbAuthScheme
 client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
 {

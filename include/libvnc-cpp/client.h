@@ -21,6 +21,9 @@ public:
     virtual void on_cut_text_utf8(std::string_view message);
     virtual void on_cut_text(std::string_view message);
     virtual void on_bell();
+    virtual void
+    on_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask);
+    virtual void on_cursor_pos(int x, int y);
 
     virtual std::string get_auth_password();
     virtual proto::rfbPixelFormat want_format();
