@@ -91,6 +91,7 @@ public:
     virtual void on_monitor_info(int monitors);
 
     virtual std::string get_auth_password();
+    virtual std::pair<std::string, std::string> get_auth_ms_account();
     virtual proto::rfbPixelFormat want_format();
     virtual proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths);
 };

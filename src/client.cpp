@@ -160,6 +160,18 @@ std::string client_delegate::get_auth_password()
     return password;
 }
 
+std::pair<std::string, std::string> client_delegate::get_auth_ms_account()
+{
+    std::pair<std::string, std::string> account;
+
+    std::cout << "Enter ms user: ";
+    std::getline(std::cin, account.first);
+    std::cout << "Enter ms password: ";
+    std::getline(std::cin, account.second);
+
+    return account;
+}
+
 proto::rfbPixelFormat client_delegate::want_format()
 {
     libvnc::proto::rfbPixelFormat format(8, 3, 4);
@@ -201,6 +213,9 @@ client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
 
     if (auths.count(proto::rfbNoAuth))
         return proto::rfbNoAuth;
+
+    if (auths.count(proto::rfbUltraMSLogonII))
+        return proto::rfbUltraMSLogonII;
 
     if (auths.count(proto::rfbVncAuth))
         return proto::rfbVncAuth;

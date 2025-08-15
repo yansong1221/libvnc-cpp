@@ -1,6 +1,7 @@
 #include "client_impl.h"
 
 #include "d3des.hpp"
+#include "dh.h"
 #include "encoding/copy_rect.hpp"
 #include "encoding/cursor.hpp"
 #include "encoding/ext_desktop_size.hpp"
@@ -38,6 +39,8 @@ namespace libvnc {
 
 namespace detail {
 
+unsigned char fixedkey[8] = {23, 82, 107, 6, 35, 78, 88, 7};
+
 static void rfbEncryptBytes(uint8_t* challenge, const char* passwd)
 {
     unsigned char key[8];
@@ -60,6 +63,24 @@ static void rfbEncryptBytes(uint8_t* challenge, const char* passwd)
         des(challenge + i, challenge + i);
     }
 }
+/*
+ *   marscha@2006
+ *   Encrypt bytes[length] in memory using key.
+ *   Key has to be 8 bytes, length a multiple of 8 bytes.
+ */
+static void vncEncryptBytes2(unsigned char* where, const int length, unsigned char* key)
+{
+    int i, j;
+    deskey(key, EN0);
+    for (i = 0; i < 8; i++)
+        where[i] ^= key[i];
+    des(where, where);
+    for (i = 8; i < length; i += 8) {
+        for (j = 0; j < 8; j++)
+            where[i + j] ^= where[i + j - 8];
+        des(where + i, where + i);
+    }
+}
 
 
 } // namespace detail
@@ -80,6 +101,14 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
         proto::rfbPalmVNCReSizeFrameBuffer, &client_impl::on_rfbPalmVNCReSizeFrameBuffer, this);
     register_message(proto::rfbMonitorInfo, &client_impl::on_rfbMonitorInfo, this);
     register_message(proto::rfbKeepAlive, &client_impl::on_rfbKeepAlive, this);
+
+
+    register_auth_message(proto::rfbNoAuth, &client_impl::on_rfbNoAuth, this);
+    register_auth_message(proto::rfbVncAuth, &client_impl::on_rfbVncAuth, this);
+    register_auth_message(proto::rfbUltraVNC, &client_impl::on_rfbUltraVNC, this);
+    register_auth_message(proto::rfbUltraMSLogonII, &client_impl::on_rfbUltraMSLogonII, this);
+    register_auth_message(
+        proto::rfbClientInitExtraMsgSupport, &client_impl::on_rfbClientInitExtraMsgSupport, this);
 
 
     register_encoding<encoding::ultra>();
@@ -502,73 +531,14 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
 
         selected_auth_scheme = static_cast<proto::rfbAuthScheme>(authScheme.value());
     }
-    co_return co_await async_authenticate(selected_auth_scheme);
-}
 
-boost::asio::awaitable<libvnc::error>
-client_impl::async_authenticate(const proto::rfbAuthScheme& auth_scheme)
-{
-    switch (auth_scheme) {
-        case proto::rfbConnFailed: break;
-        case proto::rfbNoAuth: {
-            spdlog::info("No authentication needed");
-
-            /* 3.8 and upwards sends a Security Result for rfbNoAuth */
-            if ((major_ == 3 && minor_ > 7) || major_ > 3)
-                co_return co_await read_auth_result();
-            else
-                co_return error {};
-
-        } break;
-        case proto::rfbVncAuth: {
-            boost::system::error_code ec;
-            std::vector<uint8_t> challenge;
-            challenge.resize(16);
-            co_await boost::asio::async_read(
-                socket_, boost::asio::buffer(challenge), net_awaitable[ec]);
-            if (ec)
-                co_return error::make_error(ec);
-
-
-            if (auto password = handler_.get_auth_password(); password)
-                detail::rfbEncryptBytes(challenge.data(), password->c_str());
-
-            co_await boost::asio::async_write(
-                socket_, boost::asio::buffer(challenge), net_awaitable[ec]);
-            if (ec)
-                co_return error::make_error(ec);
-
-            co_return co_await read_auth_result();
-
-        } break;
-        case proto::rfbRA2: break;
-        case proto::rfbRA2ne: break;
-        case proto::rfbSSPI: break;
-        case proto::rfbSSPIne: break;
-        case proto::rfbTight: break;
-        case proto::rfbUltraVNC: {
-            supported_messages_.supported_ultra_vnc();
-            ultra_server_ = true;
-            co_return co_await read_auth_result();
-        } break;
-        case proto::rfbTLS: break;
-        case proto::rfbVeNCrypt: break;
-        case proto::rfbSASL: break;
-        case proto::rfbARD: break;
-        case proto::rfbUltraMSLogonI: break;
-        case proto::rfbUltraMSLogonII: break;
-        case proto::rfbUltraVNC_SecureVNCPluginAuth: break;
-        case proto::rfbUltraVNC_SecureVNCPluginAuth_new: break;
-        case proto::rfbClientInitExtraMsgSupport: {
-            if (auto err = co_await async_send_client_init_extra_msg(); err)
-                co_return err;
-            co_return co_await read_auth_result();
-        } break;
-        default: break;
+    auto iter = auth_message_map_.find(selected_auth_scheme);
+    if (iter == auth_message_map_.end()) {
+        co_return error::make_error(
+            custom_error::auth_error,
+            fmt::format("Unimplemented authentication method: {}! ", (int)selected_auth_scheme));
     }
-    co_return error::make_error(
-        custom_error::auth_error,
-        fmt::format("Unimplemented authentication method: {}! ", (int)auth_scheme));
+    co_return co_await iter->second();
 }
 
 boost::asio::awaitable<error> client_impl::async_client_init()
@@ -982,6 +952,105 @@ void client_impl::handle_resize_client_buffer(int width, int height)
     spdlog::info("Got new framebuffer size: {}x{}", width, height);
 }
 
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbNoAuth()
+{
+    spdlog::info("No authentication needed");
+
+    /* 3.8 and upwards sends a Security Result for rfbNoAuth */
+    if ((major_ == 3 && minor_ > 7) || major_ > 3)
+        co_return co_await read_auth_result();
+    else
+        co_return error {};
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbVncAuth()
+{
+    boost::system::error_code ec;
+    std::vector<uint8_t> challenge;
+    challenge.resize(16);
+    co_await boost::asio::async_read(socket_, boost::asio::buffer(challenge), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+
+    if (auto password = handler_.get_auth_password(); password)
+        detail::rfbEncryptBytes(challenge.data(), password->c_str());
+
+    co_await boost::asio::async_write(socket_, boost::asio::buffer(challenge), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    co_return co_await read_auth_result();
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraVNC()
+{
+    supported_messages_.supported_ultra_vnc();
+    ultra_server_ = true;
+    co_return co_await read_auth_result();
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraMSLogonII()
+{
+    struct
+    {
+        boost::endian::big_int64_buf_t gen;
+        boost::endian::big_int64_buf_t mod;
+        boost::endian::big_int64_buf_t resp;
+    } data;
+
+    boost::system::error_code ec;
+    co_await boost::asio::async_read(
+        socket_, boost::asio::buffer(&data, sizeof(data)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    boost::endian::big_int64_buf_t pub;
+    DH dh(data.gen.value(), data.mod.value());
+    pub = dh.createInterKey();
+
+    co_await boost::asio::async_write(
+        socket_, boost::asio::buffer(&pub, sizeof(pub)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    boost::endian::big_int64_buf_t key;
+    key = dh.createEncryptionKey(data.resp.value());
+
+    spdlog::info("After DH: g={}, m={}, i={}, key={}",
+                 data.gen.value(),
+                 data.mod.value(),
+                 pub.value(),
+                 key.value());
+    struct
+    {
+        char user[256]  = {0};
+        char passwd[64] = {0};
+    } account;
+
+    if (auto result = handler_.get_auth_ms_account(); result) {
+        strncpy_s(account.passwd, result->second.c_str(), 64);
+        strncpy_s(account.user, result->first.c_str(), 254);
+    }
+
+    detail::vncEncryptBytes2((unsigned char*)account.user, sizeof(account.user), key.data());
+    detail::vncEncryptBytes2((unsigned char*)account.passwd, sizeof(account.passwd), key.data());
+
+    co_await boost::asio::async_write(
+        socket_, boost::asio::buffer(&account, sizeof(account)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    co_return co_await read_auth_result();
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbClientInitExtraMsgSupport()
+{
+    if (auto err = co_await async_send_client_init_extra_msg(); err)
+        co_return err;
+    co_return co_await read_auth_result();
+}
+
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()
 {
     boost::system::error_code ec;
@@ -1159,7 +1228,6 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbXvp()
         co_return error::make_error(ec);
 
     supported_messages_.set_client2server(proto::rfbXvp);
-    supported_messages_.set_server2client(proto::rfbXvp);
     co_return error {};
 }
 

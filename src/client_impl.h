@@ -61,7 +61,6 @@ private:
     boost::asio::awaitable<error> async_connect_rfbserver();
     boost::asio::awaitable<error> async_handshake();
     boost::asio::awaitable<error> async_authenticate();
-    boost::asio::awaitable<error> async_authenticate(const proto::rfbAuthScheme& auth_scheme);
     boost::asio::awaitable<error> async_client_init();
     boost::asio::awaitable<error> async_send_client_init_extra_msg();
 
@@ -105,6 +104,13 @@ protected:
     void handle_resize_client_buffer(int width, int height);
 
 private:
+    boost::asio::awaitable<error> on_rfbNoAuth();
+    boost::asio::awaitable<error> on_rfbVncAuth();
+    boost::asio::awaitable<error> on_rfbUltraVNC();
+    boost::asio::awaitable<error> on_rfbUltraMSLogonII();
+    boost::asio::awaitable<error> on_rfbClientInitExtraMsgSupport();
+
+private:
     boost::asio::awaitable<error> on_rfbFramebufferUpdate();
     boost::asio::awaitable<error> on_rfbSetColourMapEntries();
     boost::asio::awaitable<error> on_rfbBell();
@@ -129,6 +135,12 @@ private:
     {
         message_map_.emplace(ID,
                              std::bind(std::forward<_Fx>(_Func), std::forward<_Types>(_Args)...));
+    }
+    template<class _Fx, class... _Types>
+    void register_auth_message(uint8_t ID, _Fx&& _Func, _Types&&... _Args)
+    {
+        auth_message_map_.emplace(
+            ID, std::bind(std::forward<_Fx>(_Func), std::forward<_Types>(_Args)...));
     }
 
 public:
@@ -158,6 +170,7 @@ public:
     std::vector<std::unique_ptr<encoding::codec>> codecs_;
     using message_handler = std::function<boost::asio::awaitable<error>()>;
     std::map<uint8_t, message_handler> message_map_;
+    std::map<uint8_t, message_handler> auth_message_map_;
 
 
     std::atomic<client::status> status_ = client::status::closed;

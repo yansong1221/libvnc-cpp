@@ -19,6 +19,8 @@ public:
         return invoke(&client_delegate::select_auth_scheme, auths);
     }
     auto get_auth_password() { return invoke(&client_delegate::get_auth_password); }
+    auto get_auth_ms_account() { return invoke(&client_delegate::get_auth_ms_account); }
+
     auto want_format() { return invoke(&client_delegate::want_format); }
     auto on_new_frame_size(int w, int h)
     {
