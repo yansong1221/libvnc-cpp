@@ -34,6 +34,7 @@
 #if defined(LIBVNC_HAVE_LIBZ)
 #include <zstr.hpp>
 #endif
+#include "encoding/tight.hpp"
 
 namespace libvnc {
 
@@ -111,6 +112,7 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor)
         proto::rfbClientInitExtraMsgSupport, &client_impl::on_rfbClientInitExtraMsgSupport, this);
 
 
+    //register_encoding<encoding::tight>();
     register_encoding<encoding::ultra>();
     register_encoding<encoding::zlib>();
     register_encoding<encoding::ultra_zip>();
