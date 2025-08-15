@@ -118,6 +118,13 @@ void client_impl::close()
         socket_.shutdown(boost::asio::socket_base::shutdown_both, ec);
         socket_.close(ec);
     }
+    desktop_name_.clear();
+    current_keyboard_led_state_ = 0;
+    extendedClipboardServerCapabilities_.reset();
+    nbrMonitors_                      = 0;
+    ultra_server_                     = false;
+    brfbClientInitExtraMsgSupportNew_ = false;
+
     commit_status(client::status::closed);
 }
 void client_impl::start()
@@ -324,7 +331,7 @@ bool client_impl::send_xvp_msg(uint8_t version, proto::rfbXvpCode code)
     return send_msg_to_server(proto::rfbXvp, &xvp, sizeof(xvp));
 }
 
-bool client_impl::send_set_monitor(int nbr)
+bool client_impl::send_set_monitor(uint8_t nbr)
 {
     proto::rfbMonitorMsg mm {};
     mm.pad2 = 0;
@@ -470,8 +477,15 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
         if (ec)
             co_return error::make_error(ec);
 
-        if (auto result = handler_.select_auth_scheme({tAuth.begin(), tAuth.end()}); result)
-            selected_auth_scheme = result.value();
+        std::erase_if(tAuth, [this](const proto::rfbAuthScheme& auth_scheme) {
+            if (auth_scheme == proto::rfbClientInitExtraMsgSupportNew) {
+                brfbClientInitExtraMsgSupportNew_ = true;
+                return true;
+            }
+            return false;
+        });
+
+        selected_auth_scheme = select_auth_scheme({tAuth.begin(), tAuth.end()});
 
         co_await boost::asio::async_write(
             socket_, boost::asio::buffer(&selected_auth_scheme, 1), net_awaitable[ec]);
@@ -488,8 +502,13 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
 
         selected_auth_scheme = static_cast<proto::rfbAuthScheme>(authScheme.value());
     }
+    co_return co_await async_authenticate(selected_auth_scheme);
+}
 
-    switch (selected_auth_scheme) {
+boost::asio::awaitable<libvnc::error>
+client_impl::async_authenticate(const proto::rfbAuthScheme& auth_scheme)
+{
+    switch (auth_scheme) {
         case proto::rfbConnFailed: break;
         case proto::rfbNoAuth: {
             spdlog::info("No authentication needed");
@@ -527,7 +546,11 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
         case proto::rfbSSPI: break;
         case proto::rfbSSPIne: break;
         case proto::rfbTight: break;
-        case proto::rfbUltra: break;
+        case proto::rfbUltraVNC: {
+            supported_messages_.supported_ultra_vnc();
+            ultra_server_ = true;
+            co_return co_await read_auth_result();
+        } break;
         case proto::rfbTLS: break;
         case proto::rfbVeNCrypt: break;
         case proto::rfbSASL: break;
@@ -536,24 +559,40 @@ boost::asio::awaitable<error> client_impl::async_authenticate()
         case proto::rfbUltraMSLogonII: break;
         case proto::rfbUltraVNC_SecureVNCPluginAuth: break;
         case proto::rfbUltraVNC_SecureVNCPluginAuth_new: break;
-        case proto::rfbClientInitExtraMsgSupport: break;
-        case proto::rfbClientInitExtraMsgSupportNew: break;
+        case proto::rfbClientInitExtraMsgSupport: {
+            if (auto err = co_await async_send_client_init_extra_msg(); err)
+                co_return err;
+            co_return co_await read_auth_result();
+        } break;
         default: break;
     }
     co_return error::make_error(
         custom_error::auth_error,
-        fmt::format("Unimplemented authentication method: {}! ", (int)selected_auth_scheme));
+        fmt::format("Unimplemented authentication method: {}! ", (int)auth_scheme));
 }
 
 boost::asio::awaitable<error> client_impl::async_client_init()
 {
     boost::system::error_code ec;
 
-    uint8_t shared = share_desktop_ ? 1 : 0;
+    proto::rfbClientInitMsg ci {};
+    uint8_t flags = proto::clientInitNotShare;
+    if (share_desktop_)
+        flags |= proto::clientInitShared;
+    if (brfbClientInitExtraMsgSupportNew_)
+        flags |= proto::clientInitExtraMsgSupport;
+    ci.flags = flags;
+
     co_await boost::asio::async_write(
-        socket_, boost::asio::buffer(&shared, sizeof(shared)), net_awaitable[ec]);
+        socket_, boost::asio::buffer(&ci, sizeof(ci)), net_awaitable[ec]);
     if (ec)
         co_return error::make_error(ec);
+
+    if (brfbClientInitExtraMsgSupportNew_) {
+        brfbClientInitExtraMsgSupportNew_ = false;
+        if (auto err = co_await async_send_client_init_extra_msg(); err)
+            co_return err;
+    }
 
     proto::rfbServerInitMsg si {};
     co_await boost::asio::async_read(
@@ -592,6 +631,26 @@ boost::asio::awaitable<error> client_impl::async_client_init()
     send_frame_encodings(supported_frame_encodings());
 
 
+    co_return error {};
+}
+
+boost::asio::awaitable<error> client_impl::async_send_client_init_extra_msg()
+{
+    boost::system::error_code ec;
+    proto::rfbClientInitExtraMsg msg {};
+    msg.textLength = notifiction_text_.length();
+
+    co_await boost::asio::async_write(
+        socket_, boost::asio::buffer(&msg, sizeof(msg)), net_awaitable[ec]);
+    if (ec)
+        co_return error::make_error(ec);
+
+    if (!notifiction_text_.empty()) {
+        co_await boost::asio::async_write(
+            socket_, boost::asio::buffer(notifiction_text_), net_awaitable[ec]);
+        if (ec)
+            co_return error::make_error(ec);
+    }
     co_return error {};
 }
 
@@ -756,6 +815,9 @@ boost::asio::awaitable<error> client_impl::read_auth_result()
             spdlog::error(msg);
             co_return error::make_error(custom_error::auth_error, msg);
         } break;
+        case proto::rfbVncAuthContinue: {
+            co_return co_await async_authenticate();
+        } break;
         default: break;
     }
     auto msg = std::format("Unknown VNC authentication result: {}", authResult.value());
@@ -851,6 +913,21 @@ void client_impl::commit_status(const client::status& s)
         return;
     status_ = s;
     handler_.on_status_changed(s);
+}
+
+proto::rfbAuthScheme client_impl::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
+{
+    if (auths.count(proto::rfbUltraVNC))
+        return proto::rfbUltraVNC;
+
+    if (auths.count(proto::rfbClientInitExtraMsgSupport))
+        return proto::rfbClientInitExtraMsgSupport;
+
+
+    if (auto result = handler_.select_auth_scheme(auths); result)
+        return result.value();
+
+    return proto::rfbConnFailed;
 }
 
 void client_impl::soft_cursor_lock_area(int x, int y, int w, int h)
@@ -1130,7 +1207,8 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbMonitorInfo()
 
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbKeepAlive()
 {
-    supported_messages_.set_client2server(proto::rfbKeepAlive);
+    if (!supported_messages_.test_client2server(proto::rfbKeepAlive))
+        supported_messages_.set_client2server(proto::rfbKeepAlive);
     co_return error {};
 }
 

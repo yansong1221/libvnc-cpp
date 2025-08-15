@@ -48,7 +48,7 @@ public:
 
     bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
 
-    bool send_set_monitor(int nbr);
+    bool send_set_monitor(uint8_t nbr);
 
     void send_framebuffer_update_request(int x, int y, int w, int h, bool incremental);
     void send_framebuffer_update_request(bool incremental) override;
@@ -61,13 +61,16 @@ private:
     boost::asio::awaitable<error> async_connect_rfbserver();
     boost::asio::awaitable<error> async_handshake();
     boost::asio::awaitable<error> async_authenticate();
+    boost::asio::awaitable<error> async_authenticate(const proto::rfbAuthScheme& auth_scheme);
     boost::asio::awaitable<error> async_client_init();
+    boost::asio::awaitable<error> async_send_client_init_extra_msg();
 
     boost::asio::awaitable<error> server_message_loop();
     boost::asio::awaitable<error> server_keepalive_loop();
 
     boost::asio::awaitable<error> read_auth_result();
     boost::asio::awaitable<error> read_error_reason();
+
 
     bool send_msg_to_server(const proto::rfbClientToServerMsg& ID,
                             const void* data,
@@ -85,6 +88,8 @@ private:
     }
     void send_raw_data(std::vector<uint8_t>&& data);
     void commit_status(const client::status& s);
+
+    proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths);
 
 protected:
     void soft_cursor_lock_area(int x, int y, int w, int h) override;
@@ -137,11 +142,10 @@ public:
     bool share_desktop_             = true;
     std::atomic_int compress_level_ = 3;
     std::atomic_int quality_level_  = 5;
+    std::string notifiction_text_;
 
     frame_buffer frame_;
 
-    std::string desktop_name_;
-    std::atomic_int current_keyboard_led_state_ = 0;
 
     std::vector<proto::rfbExtDesktopScreen> screens_;
 
@@ -155,10 +159,14 @@ public:
     using message_handler = std::function<boost::asio::awaitable<error>()>;
     std::map<uint8_t, message_handler> message_map_;
 
-    std::bitset<32> extendedClipboardServerCapabilities_;
-    std::atomic<client::status> status_ = client::status::closed;
 
-    std::atomic_uint nbrMonitors_ = 0;
+    std::atomic<client::status> status_ = client::status::closed;
+    std::string desktop_name_;
+    std::atomic_int current_keyboard_led_state_ = 0;
+    std::bitset<32> extendedClipboardServerCapabilities_;
+    std::atomic_uint nbrMonitors_                      = 0;
+    std::atomic_bool ultra_server_                     = false;
+    std::atomic_bool brfbClientInitExtraMsgSupportNew_ = false;
 };
 
 

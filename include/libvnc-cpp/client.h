@@ -35,6 +35,7 @@ public:
     void set_share_desktop(bool share);
     void set_compress_level(int level);
     void set_quality_level(int level);
+    void set_notifiction_text(std::string_view text);
 
     const frame_buffer& frame() const;
     status current_status() const;
@@ -59,7 +60,7 @@ public:
 
     bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
 
-    bool send_set_monitor(int nbr);
+    bool send_set_monitor(uint8_t nbr);
     int monitors() const;
 
 private:

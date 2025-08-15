@@ -163,6 +163,7 @@ enum rfbClientToServerMsg : uint8_t
 enum rfbAuthScheme : uint8_t
 {
     rfbConnFailed    = 0,
+    rfbInvalidAuth   = rfbConnFailed,
     rfbNoAuth        = 1,
     rfbVncAuth       = 2,
     rfbRA2           = 5,
@@ -170,7 +171,7 @@ enum rfbAuthScheme : uint8_t
     rfbSSPI          = 7,
     rfbSSPIne        = 8,
     rfbTight         = 16,
-    rfbUltra         = 17,
+    rfbUltraVNC      = 17,
     rfbTLS           = 18,
     rfbVeNCrypt      = 19,
     rfbSASL          = 20,
@@ -213,6 +214,35 @@ enum rfbTextChatType : int32_t
     rfbTextChatOpen     = -1,
     rfbTextChatClose    = -2,
     rfbTextChatFinished = -3,
+};
+
+// adzm 2010-09
+enum rfbClientInitMsgFlags : uint8_t
+{
+    clientInitNotShare        = 0x00, // 00
+    clientInitShared          = 0x01, // 01
+    clientInitExtraMsgSupport = 0x02
+};
+/*-----------------------------------------------------------------------------
+ * Client Initialisation Message
+ *
+ * Once the client and server are sure that they're happy to talk to one
+ * another, the client sends an initialisation message. At present this
+ * message only consists of a boolean indicating whether the server should try
+ * to share the desktop by leaving other clients connected, or give exclusive
+ * access to this client by disconnecting all other clients.
+ */
+
+// adzm 2010-09 - worked around this after all, but left the enum in here anyway.
+struct rfbClientInitMsg
+{
+    boost::endian::big_uint8_buf_t flags; // rfbClientInitMsgFlags
+};
+
+struct rfbClientInitExtraMsg
+{
+    boost::endian::big_uint8_buf_t textLength;
+    /* followed by char text[nameLength] */
 };
 
 struct rfbPixelFormat

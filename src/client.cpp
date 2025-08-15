@@ -5,81 +5,6 @@
 
 namespace libvnc {
 
-
-std::string client_delegate::get_auth_password()
-{
-    std::string password;
-    std::cout << "Enter password: ";
-    std::getline(std::cin, password);
-    return password;
-}
-
-proto::rfbPixelFormat client_delegate::want_format()
-{
-    libvnc::proto::rfbPixelFormat format(8, 3, 4);
-    format.redShift   = 16;
-    format.greenShift = 8;
-    format.blueShift  = 0;
-    return format;
-}
-
-void client_delegate::on_bell()
-{
-    return;
-}
-
-void client_delegate::on_cursor_shape(int xhot,
-                                      int yhot,
-                                      const frame_buffer& rc_source,
-                                      const uint8_t* rc_mask)
-{
-}
-
-void client_delegate::on_cursor_pos(int x, int y)
-{
-}
-
-void client_delegate::on_status_changed(const client::status& s)
-{
-}
-
-void client_delegate::on_monitor_info(int count)
-{
-}
-
-libvnc::proto::rfbAuthScheme
-client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
-{
-    if (auths.empty())
-        return proto::rfbConnFailed;
-
-    if (auths.count(proto::rfbNoAuth))
-        return proto::rfbNoAuth;
-
-    if (auths.count(proto::rfbVncAuth))
-        return proto::rfbVncAuth;
-
-    return *auths.begin();
-}
-
-
-void client_delegate::on_keyboard_led_state(int state)
-{
-}
-
-void client_delegate::on_text_chat(const proto::rfbTextChatType& type, std::string_view message)
-{
-    return;
-}
-
-void client_delegate::on_cut_text_utf8(std::string_view message)
-{
-}
-
-void client_delegate::on_cut_text(std::string_view message)
-{
-}
-
 client::client(boost::asio::io_context& executor, client_delegate* handler)
     : impl_(std::make_shared<client_impl>(executor.get_executor()))
 {
@@ -125,6 +50,11 @@ void client::set_compress_level(int level)
 void client::set_quality_level(int level)
 {
     impl_->quality_level_ = std::clamp(level, 0, 9);
+}
+
+void client::set_notifiction_text(std::string_view text)
+{
+    impl_->notifiction_text_ = text;
 }
 
 const frame_buffer& client::frame() const
@@ -207,7 +137,7 @@ bool client::send_xvp_msg(uint8_t version, proto::rfbXvpCode code)
     return impl_->send_xvp_msg(version, code);
 }
 
-bool client::send_set_monitor(int nbr)
+bool client::send_set_monitor(uint8_t nbr)
 {
     return impl_->send_set_monitor(nbr);
 }
@@ -222,4 +152,77 @@ int client::monitors() const
     return impl_->nbrMonitors_;
 }
 
+std::string client_delegate::get_auth_password()
+{
+    std::string password;
+    std::cout << "Enter password: ";
+    std::getline(std::cin, password);
+    return password;
+}
+
+proto::rfbPixelFormat client_delegate::want_format()
+{
+    libvnc::proto::rfbPixelFormat format(8, 3, 4);
+    format.redShift   = 16;
+    format.greenShift = 8;
+    format.blueShift  = 0;
+    return format;
+}
+
+void client_delegate::on_bell()
+{
+    return;
+}
+
+void client_delegate::on_cursor_shape(int xhot,
+                                      int yhot,
+                                      const frame_buffer& rc_source,
+                                      const uint8_t* rc_mask)
+{
+}
+
+void client_delegate::on_cursor_pos(int x, int y)
+{
+}
+
+void client_delegate::on_status_changed(const client::status& s)
+{
+}
+
+void client_delegate::on_monitor_info(int count)
+{
+}
+
+libvnc::proto::rfbAuthScheme
+client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths)
+{
+    if (auths.empty())
+        return proto::rfbConnFailed;
+
+    if (auths.count(proto::rfbNoAuth))
+        return proto::rfbNoAuth;
+
+    if (auths.count(proto::rfbVncAuth))
+        return proto::rfbVncAuth;
+
+    return *auths.begin();
+}
+
+
+void client_delegate::on_keyboard_led_state(int state)
+{
+}
+
+void client_delegate::on_text_chat(const proto::rfbTextChatType& type, std::string_view message)
+{
+    return;
+}
+
+void client_delegate::on_cut_text_utf8(std::string_view message)
+{
+}
+
+void client_delegate::on_cut_text(std::string_view message)
+{
+}
 } // namespace libvnc
