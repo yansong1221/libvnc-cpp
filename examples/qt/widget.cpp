@@ -11,7 +11,7 @@ Widget::Widget(QWidget* parent)
     timer->start();
     connect(timer, &QTimer::timeout, this, [this]() { ioc_.poll(); });
     client_.set_host("127.0.0.1");
-    client_.set_host("100.64.0.15");
+    //client_.set_host("100.64.0.15");
     client_.start();
 }
 

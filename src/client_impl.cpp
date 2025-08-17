@@ -106,7 +106,7 @@ client_impl::client_impl(const boost::asio::any_io_executor &executor)
 	register_auth_message(proto::rfbUltraMSLogonII, &client_impl::on_rfbUltraMSLogonII, this);
 	register_auth_message(proto::rfbClientInitExtraMsgSupport, &client_impl::on_rfbClientInitExtraMsgSupport, this);
 
-	//register_encoding<encoding::tight>();
+	register_encoding<encoding::tight>();
 	register_encoding<encoding::ultra>();
 	register_encoding<encoding::zlib>();
 	register_encoding<encoding::ultra_zip>();

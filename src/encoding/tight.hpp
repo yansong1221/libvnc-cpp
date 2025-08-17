@@ -29,8 +29,7 @@ static int tight_bits_per_pixel(const proto::rfbPixelFormat &format)
 }
 
 template<typename T>
-requires std::is_integral_v<T> static T rgb24_to_pixel(const proto::rfbPixelFormat &format, uint8_t r, uint8_t g,
-						       uint8_t b)
+requires std::is_integral_v<T> static T rgb24_to_pixel(const proto::rfbPixelFormat &format, int r, int g, int b)
 {
 	return ((((T)(r) & 0xFF) * format.redMax.value() + 127) / 255 << format.redShift.value() |
 		(((T)(g) & 0xFF) * format.greenMax.value() + 127) / 255 << format.greenShift.value() |
@@ -444,23 +443,29 @@ private:
 	boost::asio::awaitable<error> tight_fill(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
 						 frame_buffer &frame)
 	{
-		auto bytes_pixel = frame.bytes_per_pixel();
 
 		int rx = rect.x.value();
 		int ry = rect.y.value();
 		int rw = rect.w.value();
 		int rh = rect.h.value();
 
+		auto format = frame.pixel_format();
+
+		auto bytes_pixel = detail::tight_bits_per_pixel(format) / 8;
+
 		boost::system::error_code ec;
 		std::vector<uint8_t> fill_colour;
 		fill_colour.resize(bytes_pixel);
-
-		bytes_pixel = detail::tight_bits_per_pixel(frame.pixel_format()) / 8;
 
 		co_await boost::asio::async_read(socket, boost::asio::buffer(fill_colour, bytes_pixel),
 						 net_awaitable[ec]);
 		if (ec)
 			co_return error::make_error(ec);
+		//if (!format.bigEndian.value())
+			//std::reverse(fill_colour.begin(), fill_colour.end());
+
+		if (detail::is_argb32_with_tight_rgb24(format))
+			detail::rgb24_to_pixel<uint32_t>(format, fill_colour);
 
 		frame.fill_rect(rx, ry, rw, rh, fill_colour.data());
 		co_return error{};
@@ -512,8 +517,8 @@ private:
 			pitch = frame.width() * pixelSize;
 			dst = frame.data() + (ry * pitch + rx * pixelSize);
 
-			// decompress_buffer_.resize(pitch * rh);
-			// dst = decompress_buffer_.data();
+			//decompress_buffer_.resize(pitch * rh);
+			//dst = decompress_buffer_.data();
 		}
 
 		if (tjDecompress(jpeg_handle_.get(), (uint8_t *)buffer_.data().data(), (unsigned long)compressedLen,
