@@ -16,6 +16,7 @@
 #include "encoding/supported_messages.hpp"
 #include "encoding/ultra.hpp"
 #include "encoding/zlib.hpp"
+#include "encoding/tight.hpp"
 #include "libvnc-cpp/client.h"
 #include "libvnc-cpp/error.h"
 #include "libvnc-cpp/proto.h"
@@ -34,7 +35,6 @@
 #if defined(LIBVNC_HAVE_LIBZ)
 #include <zstr.hpp>
 #endif
-#include "encoding/tight.hpp"
 
 namespace libvnc {
 
@@ -954,48 +954,46 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraVNC()
 
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraMSLogonII()
 {
-	struct {
+	try {
+
 		boost::endian::big_int64_buf_t gen;
 		boost::endian::big_int64_buf_t mod;
 		boost::endian::big_int64_buf_t resp;
-	} data;
 
-	boost::system::error_code ec;
-	co_await boost::asio::async_read(socket_, boost::asio::buffer(&data, sizeof(data)), net_awaitable[ec]);
-	if (ec)
-		co_return error::make_error(ec);
+		co_await boost::asio::async_read(socket_, boost::asio::buffer(&gen, sizeof(gen)));
+		co_await boost::asio::async_read(socket_, boost::asio::buffer(&mod, sizeof(mod)));
+		co_await boost::asio::async_read(socket_, boost::asio::buffer(&resp, sizeof(resp)));
 
-	boost::endian::big_int64_buf_t pub;
-	DH dh(data.gen.value(), data.mod.value());
-	pub = dh.createInterKey();
+		boost::endian::big_int64_buf_t pub;
+		DH dh(gen.value(), mod.value());
+		pub = dh.createInterKey();
 
-	co_await boost::asio::async_write(socket_, boost::asio::buffer(&pub, sizeof(pub)), net_awaitable[ec]);
-	if (ec)
-		co_return error::make_error(ec);
+		co_await boost::asio::async_write(socket_, boost::asio::buffer(&pub, sizeof(pub)));
 
-	boost::endian::big_int64_buf_t key;
-	key = dh.createEncryptionKey(data.resp.value());
+		boost::endian::big_int64_buf_t key;
+		key = dh.createEncryptionKey(resp.value());
 
-	spdlog::info("After DH: g={}, m={}, i={}, key={}", data.gen.value(), data.mod.value(), pub.value(),
-		     key.value());
-	struct {
+		spdlog::info("After DH: g={}, m={}, i={}, key={}", gen.value(), mod.value(), pub.value(), key.value());
+
 		char user[256] = {0};
 		char passwd[64] = {0};
-	} account;
 
-	if (auto result = handler_.get_auth_ms_account(); result) {
-		strncpy_s(account.passwd, result->second.c_str(), 64);
-		strncpy_s(account.user, result->first.c_str(), 254);
+		if (auto result = handler_.get_auth_ms_account(); result) {
+			strncpy_s(passwd, result->second.c_str(), 64);
+			strncpy_s(user, result->first.c_str(), 254);
+		}
+
+		detail::vncEncryptBytes2((unsigned char *)user, sizeof(user), key.data());
+		detail::vncEncryptBytes2((unsigned char *)passwd, sizeof(passwd), key.data());
+
+		co_await boost::asio::async_write(socket_, boost::asio::buffer(&user, sizeof(user)));
+		co_await boost::asio::async_write(socket_, boost::asio::buffer(&passwd, sizeof(passwd)));
+
+		co_return co_await read_auth_result();
+
+	} catch (const boost::system::system_error &e) {
+		co_return error::make_error(e.code());
 	}
-
-	detail::vncEncryptBytes2((unsigned char *)account.user, sizeof(account.user), key.data());
-	detail::vncEncryptBytes2((unsigned char *)account.passwd, sizeof(account.passwd), key.data());
-
-	co_await boost::asio::async_write(socket_, boost::asio::buffer(&account, sizeof(account)), net_awaitable[ec]);
-	if (ec)
-		co_return error::make_error(ec);
-
-	co_return co_await read_auth_result();
 }
 
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbClientInitExtraMsgSupport()

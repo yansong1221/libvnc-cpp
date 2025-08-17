@@ -184,7 +184,10 @@ enum rfbAuthScheme : uint8_t {
 	rfbUltraVNC_SecureVNCPluginAuth = 0x72,
 	rfbUltraVNC_SecureVNCPluginAuth_new = 0x73,
 	rfbClientInitExtraMsgSupport = 0x74,
-	rfbClientInitExtraMsgSupportNew = 0x75
+	rfbClientInitExtraMsgSupportNew = 0x75,
+
+	rfbRSAAES_256 = 129,
+	rfbRSAAESne_256 = 130,
 };
 
 enum rfbVncAuthResult : uint32_t {

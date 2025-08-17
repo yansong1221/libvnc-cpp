@@ -1,7 +1,11 @@
 SET(MOUDLE libvnc-cpp)
 
+
+
 find_package(Boost REQUIRED COMPONENTS asio endian)
 find_package(spdlog CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(ZLIB REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(ZStrGitRepo
@@ -10,7 +14,6 @@ FetchContent_Declare(ZStrGitRepo
 )
 FetchContent_MakeAvailable(ZStrGitRepo) # defines INTERFACE target 'zstr::zstr'
 
-find_package(ZLIB REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LZO REQUIRED lzo2)
@@ -29,6 +32,7 @@ source_group(TREE ${LIBVNC_CPP_INCLUDE_DIR} PREFIX "include" FILES ${MOUDLE_HEAD
 add_library(${MOUDLE} ${MOUDLE_SOURCE_FILES} ${MOUDLE_HEADER_FILES})
 
 target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian
+OpenSSL::SSL OpenSSL::Crypto
 spdlog::spdlog   
 zstr::zstr  ZLIB::ZLIB
 JPEG::JPEG
