@@ -15,6 +15,9 @@ find_package(ZLIB REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LZO REQUIRED lzo2)
 
+find_package(JPEG REQUIRED)
+find_package(libjpeg-turbo CONFIG REQUIRED)
+
 
 file(GLOB_RECURSE MOUDLE_SOURCE_FILES  ${LIBVNC_CPP_SRC_DIR}/*.h ${LIBVNC_CPP_SRC_DIR}/*.c ${LIBVNC_CPP_SRC_DIR}/*.cxx ${LIBVNC_CPP_SRC_DIR}/*.cpp ${LIBVNC_CPP_SRC_DIR}/*.hpp)
 source_group(TREE ${LIBVNC_CPP_SRC_DIR} PREFIX "src" FILES ${MOUDLE_SOURCE_FILES})
@@ -28,6 +31,8 @@ add_library(${MOUDLE} ${MOUDLE_SOURCE_FILES} ${MOUDLE_HEADER_FILES})
 target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian
 spdlog::spdlog   
 zstr::zstr  ZLIB::ZLIB
+JPEG::JPEG
+$<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
 )
 
 if(LZO_FOUND)

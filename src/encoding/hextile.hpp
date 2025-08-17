@@ -9,9 +9,8 @@
 
 namespace libvnc::encoding {
 
-class hextile : public frame_codec
-{
-    /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+class hextile : public frame_codec {
+	/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
      * Hextile Encoding. The rectangle is divided up into "tiles" of 16x16 pixels,
      * starting at the top left going in left-to-right, top-to-bottom order. If
      * the width of the rectangle is not an exact multiple of 16 then the width of
@@ -49,142 +48,129 @@ class hextile : public frame_codec
      * and the Extract macros can be used to extract the x, y, w, h values from
      * the two bytes.
      */
-    constexpr static uint8_t rfbHextileRaw                 = (1 << 0);
-    constexpr static uint8_t rfbHextileBackgroundSpecified = (1 << 1);
-    constexpr static uint8_t rfbHextileForegroundSpecified = (1 << 2);
-    constexpr static uint8_t rfbHextileAnySubrects         = (1 << 3);
-    constexpr static uint8_t rfbHextileSubrectsColoured    = (1 << 4);
+	constexpr static uint8_t rfbHextileRaw = (1 << 0);
+	constexpr static uint8_t rfbHextileBackgroundSpecified = (1 << 1);
+	constexpr static uint8_t rfbHextileForegroundSpecified = (1 << 2);
+	constexpr static uint8_t rfbHextileAnySubrects = (1 << 3);
+	constexpr static uint8_t rfbHextileSubrectsColoured = (1 << 4);
 
 public:
-    void init() override { }
-    std::string codec_name() const override { return "hextile"; }
-    proto::rfbEncoding encoding_code() const override
-    {
-        return proto::rfbEncoding::rfbEncodingHextile;
-    }
+	void init() override {}
+	std::string codec_name() const override { return "hextile"; }
+	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingHextile; }
 
-    boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
-                                         const proto::rfbRectangle& rect,
-                                         frame_buffer& buffer,
-                                         std::shared_ptr<frame_op> op) override
-    {
-        if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
-            co_return err;
+	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
+	{
+		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
+			co_return err;
 
-        int rx = rect.x.value();
-        int ry = rect.y.value();
-        int rw = rect.w.value();
-        int rh = rect.h.value();
+		int rx = rect.x.value();
+		int ry = rect.y.value();
+		int rw = rect.w.value();
+		int rh = rect.h.value();
 
-        for (int y = ry; y < ry + rh; y += 16) {
-            for (int x = rx; x < rx + rw; x += 16) {
-                int w = 16, h = 16;
-                if (rx + rw - x < 16)
-                    w = rx + rw - x;
-                if (ry + rh - y < 16)
-                    h = ry + rh - y;
+		for (int y = ry; y < ry + rh; y += 16) {
+			for (int x = rx; x < rx + rw; x += 16) {
+				int w = 16, h = 16;
+				if (rx + rw - x < 16)
+					w = rx + rw - x;
+				if (ry + rh - y < 16)
+					h = ry + rh - y;
 
-                if (auto err = co_await handle_hextile(socket, buffer, op, x, y, w, h); err)
-                    co_return err;
-            }
-        }
-        co_return error {};
-    }
+				if (auto err = co_await handle_hextile(socket, buffer, op, x, y, w, h); err)
+					co_return err;
+			}
+		}
+		co_return error{};
+	}
 
 private:
-    boost::asio::awaitable<error> handle_hextile(boost::asio::ip::tcp::socket& socket,
-                                                 frame_buffer& frame,
-                                                 std::shared_ptr<frame_op> op,
-                                                 int x,
-                                                 int y,
-                                                 int w,
-                                                 int h)
-    {
-        boost::system::error_code ec;
-        uint8_t subencoding {};
-        uint8_t nSubrects {};
-        std::vector<uint8_t> bg(frame.bytes_per_pixel(), 0);
-        std::vector<uint8_t> fg(frame.bytes_per_pixel(), 0);
+	boost::asio::awaitable<error> handle_hextile(boost::asio::ip::tcp::socket &socket, frame_buffer &frame,
+						     std::shared_ptr<frame_op> op, int x, int y, int w, int h)
+	{
+		boost::system::error_code ec;
+		uint8_t subencoding{};
+		uint8_t nSubrects{};
+		std::vector<uint8_t> bg(frame.bytes_per_pixel(), 0);
+		std::vector<uint8_t> fg(frame.bytes_per_pixel(), 0);
 
-        co_await boost::asio::async_read(
-            socket, boost::asio::buffer(&subencoding, sizeof(subencoding)), net_awaitable[ec]);
-        if (ec)
-            co_return error::make_error(ec);
+		co_await boost::asio::async_read(socket, boost::asio::buffer(&subencoding, sizeof(subencoding)),
+						 net_awaitable[ec]);
+		if (ec)
+			co_return error::make_error(ec);
 
-        if (subencoding & rfbHextileRaw) {
-            auto bytesPerLine = w * frame.bytes_per_pixel();
+		if (subencoding & rfbHextileRaw) {
+			auto bytesPerLine = w * frame.bytes_per_pixel();
 
-            for (int i = 0; i < h; ++i) {
-                auto ptr = frame.data(x, y + i);
+			for (int i = 0; i < h; ++i) {
+				auto ptr = frame.data(x, y + i);
 
-                co_await boost::asio::async_read(
-                    socket, boost::asio::buffer(ptr, bytesPerLine), net_awaitable[ec]);
-                if (ec)
-                    co_return error::make_error(ec);
-            }
-            co_return error {};
-        }
+				co_await boost::asio::async_read(socket, boost::asio::buffer(ptr, bytesPerLine),
+								 net_awaitable[ec]);
+				if (ec)
+					co_return error::make_error(ec);
+			}
+			co_return error{};
+		}
 
-        if (subencoding & rfbHextileBackgroundSpecified) {
-       
-            co_await boost::asio::async_read(socket, boost::asio::buffer(bg), net_awaitable[ec]);
-            if (ec)
-                co_return error::make_error(ec);
-        }
-        frame.fill_rect(x, y, w, h, bg.data());
+		if (subencoding & rfbHextileBackgroundSpecified) {
 
+			co_await boost::asio::async_read(socket, boost::asio::buffer(bg), net_awaitable[ec]);
+			if (ec)
+				co_return error::make_error(ec);
+		}
+		frame.fill_rect(x, y, w, h, bg.data());
 
-        if (subencoding & rfbHextileForegroundSpecified) {
-            co_await boost::asio::async_read(socket, boost::asio::buffer(fg), net_awaitable[ec]);
-            if (ec)
-                co_return error::make_error(ec);
-        }
-        if (!(subencoding & rfbHextileAnySubrects)) {
-            co_return error {};
-        }
+		if (subencoding & rfbHextileForegroundSpecified) {
+			co_await boost::asio::async_read(socket, boost::asio::buffer(fg), net_awaitable[ec]);
+			if (ec)
+				co_return error::make_error(ec);
+		}
+		if (!(subencoding & rfbHextileAnySubrects)) {
+			co_return error{};
+		}
 
-        co_await boost::asio::async_read(
-            socket, boost::asio::buffer(&nSubrects, sizeof(nSubrects)), net_awaitable[ec]);
-        if (ec)
-            co_return error::make_error(ec);
+		co_await boost::asio::async_read(socket, boost::asio::buffer(&nSubrects, sizeof(nSubrects)),
+						 net_awaitable[ec]);
+		if (ec)
+			co_return error::make_error(ec);
 
-        if (subencoding & rfbHextileSubrectsColoured) {
-            for (int i = 0; i < nSubrects; i++) {
-                co_await boost::asio::async_read(
-                    socket, boost::asio::buffer(fg), net_awaitable[ec]);
-                if (ec)
-                    co_return error::make_error(ec);
+		if (subencoding & rfbHextileSubrectsColoured) {
+			for (int i = 0; i < nSubrects; i++) {
+				co_await boost::asio::async_read(socket, boost::asio::buffer(fg), net_awaitable[ec]);
+				if (ec)
+					co_return error::make_error(ec);
 
-                boost::endian::big_uint16_buf_t sub_rect {};
-                co_await boost::asio::async_read(
-                    socket, boost::asio::buffer(&sub_rect, sizeof(sub_rect)), net_awaitable[ec]);
-                if (ec)
-                    co_return error::make_error(ec);
+				boost::endian::big_uint16_buf_t sub_rect{};
+				co_await boost::asio::async_read(
+					socket, boost::asio::buffer(&sub_rect, sizeof(sub_rect)), net_awaitable[ec]);
+				if (ec)
+					co_return error::make_error(ec);
 
-                auto sx = sub_rect.value() >> 12;
-                auto sy = (sub_rect.value() >> 8) & 0xF;
-                auto sw = ((sub_rect.value() >> 4) & 0xF) + 1;
-                auto sh = (sub_rect.value() & 0xF) + 1;
-                frame.fill_rect(x + sx, y + sy, sw, sh, fg.data());
-            }
-        }
-        else {
-            for (int i = 0; i < nSubrects; i++) {
-                boost::endian::big_uint16_buf_t sub_rect {};
-                co_await boost::asio::async_read(
-                    socket, boost::asio::buffer(&sub_rect, sizeof(sub_rect)), net_awaitable[ec]);
-                if (ec)
-                    co_return error::make_error(ec);
+				auto sx = sub_rect.value() >> 12;
+				auto sy = (sub_rect.value() >> 8) & 0xF;
+				auto sw = ((sub_rect.value() >> 4) & 0xF) + 1;
+				auto sh = (sub_rect.value() & 0xF) + 1;
+				frame.fill_rect(x + sx, y + sy, sw, sh, fg.data());
+			}
+		} else {
+			for (int i = 0; i < nSubrects; i++) {
+				boost::endian::big_uint16_buf_t sub_rect{};
+				co_await boost::asio::async_read(
+					socket, boost::asio::buffer(&sub_rect, sizeof(sub_rect)), net_awaitable[ec]);
+				if (ec)
+					co_return error::make_error(ec);
 
-                auto sx = sub_rect.value() >> 12;
-                auto sy = (sub_rect.value() >> 8) & 0xF;
-                auto sw = ((sub_rect.value() >> 4) & 0xF) + 1;
-                auto sh = (sub_rect.value() & 0xF) + 1;
-                frame.fill_rect(x + sx, y + sy, sw, sh, fg.data());
-            }
-        }
+				auto sx = sub_rect.value() >> 12;
+				auto sy = (sub_rect.value() >> 8) & 0xF;
+				auto sw = ((sub_rect.value() >> 4) & 0xF) + 1;
+				auto sh = (sub_rect.value() & 0xF) + 1;
+				frame.fill_rect(x + sx, y + sy, sw, sh, fg.data());
+			}
+		}
 
-        co_return error {};
-    }
+		co_return error{};
+	}
 };
 } // namespace libvnc::encoding

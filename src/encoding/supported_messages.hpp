@@ -6,33 +6,25 @@
 
 namespace libvnc::encoding {
 
-class supported_messages : public codec
-{
+class supported_messages : public codec {
 public:
-    std::string codec_name() const override { return "supported-messages"; }
+	std::string codec_name() const override { return "supported-messages"; }
 
-    void init() override { }
-    proto::rfbEncoding encoding_code() const override
-    {
-        return proto::rfbEncoding::rfbEncodingSupportedMessages;
-    }
+	void init() override {}
+	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingSupportedMessages; }
 
-    boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket& socket,
-                                         const proto::rfbRectangle& rect,
-                                         frame_buffer& frame,
-                                         std::shared_ptr<frame_op> op) override
-    {
-        boost::system::error_code ec;
-        proto::rfbSupportedMessages supportedMessages = {0};
-        co_await boost::asio::async_read(
-            socket,
-            boost::asio::buffer(&supportedMessages, sizeof(supportedMessages)),
-            net_awaitable[ec]);
-        if (ec)
-            co_return error::make_error(ec);
+	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+					     frame_buffer &frame, std::shared_ptr<frame_op> op) override
+	{
+		boost::system::error_code ec;
+		proto::rfbSupportedMessages supportedMessages = {0};
+		co_await boost::asio::async_read(
+			socket, boost::asio::buffer(&supportedMessages, sizeof(supportedMessages)), net_awaitable[ec]);
+		if (ec)
+			co_return error::make_error(ec);
 
-        op->handle_supported_messages(supportedMessages);
-        co_return error {};
-    }
+		op->handle_supported_messages(supportedMessages);
+		co_return error{};
+	}
 };
 } // namespace libvnc::encoding
