@@ -63,11 +63,12 @@ Except::Except(const char *info_) {
 	}
 }
 
-DH::DH() : maxNum(((unsigned __int64) 1) << DH_MAX_BITS) {
+DH_EX::DH_EX() : maxNum(((unsigned __int64)1) << DH_MAX_BITS)
+{
 	srand((unsigned) time(NULL));
 }
 
-DH::DH(unsigned __int64 generator, unsigned __int64 modulus)
+DH_EX::DH_EX(unsigned __int64 generator, unsigned __int64 modulus)
 	: gen(generator), mod(modulus),
 	  maxNum(((unsigned __int64) 1) << DH_MAX_BITS) {
 	if (gen > maxNum || mod > maxNum)
@@ -77,7 +78,10 @@ DH::DH(unsigned __int64 generator, unsigned __int64 modulus)
 	srand((unsigned) time(NULL));
 }
 
-DH::~DH() { cleanMem(); }
+DH_EX::~DH_EX()
+{
+	cleanMem();
+}
 
 unsigned __int64 rng(unsigned __int64 limit) {
 	return ((((unsigned __int64) rand()) * rand() * rand ()) % limit);
@@ -87,7 +91,8 @@ unsigned __int64 rng(unsigned __int64 limit) {
 //trials is the number of attempts to verify this, because the function
 //is not 100% accurate it may be a composite. However setting the trial
 //value to around 5 should guarantee success even with very large primes
-bool DH::millerRabin (unsigned __int64 n, unsigned int trials) { 
+bool DH_EX::millerRabin(unsigned __int64 n, unsigned int trials)
+{ 
 	unsigned __int64 a = 0; 
 
 	for (unsigned int i = 0; i < trials; i++) { 
@@ -101,7 +106,8 @@ bool DH::millerRabin (unsigned __int64 n, unsigned int trials) {
 //choosing a randomly large integer, and ensuring the value is odd
 //then uses the miller-rabin primality test on it to see if it is prime
 //if not the value gets increased until it is prime
-unsigned __int64 DH::generatePrime() {
+unsigned __int64 DH_EX::generatePrime()
+{
 	unsigned __int64 prime = 0;
 
 	do {
@@ -111,7 +117,8 @@ unsigned __int64 DH::generatePrime() {
 	return prime;
 }
  
-unsigned __int64 DH::tryToGeneratePrime(unsigned __int64 prime) {
+unsigned __int64 DH_EX::tryToGeneratePrime(unsigned __int64 prime)
+{
 	//ensure it is an odd number
 	if ((prime & 1) == 0)
 		prime += 1;
@@ -128,7 +135,8 @@ unsigned __int64 DH::tryToGeneratePrime(unsigned __int64 prime) {
 //the values of X, Y, and N can be massive, and this can be 
 //achieved by first calculating X to the power of 2 then 
 //using power chaining over modulus N
-unsigned __int64 DH::XpowYmodN(unsigned __int64 x, unsigned __int64 y, unsigned __int64 N) {
+unsigned __int64 DH_EX::XpowYmodN(unsigned __int64 x, unsigned __int64 y, unsigned __int64 N)
+{
 	unsigned __int64 result = 1;
 	const unsigned __int64 oneShift63 = ((unsigned __int64) 1) << 63;
 	
@@ -140,7 +148,8 @@ unsigned __int64 DH::XpowYmodN(unsigned __int64 x, unsigned __int64 y, unsigned 
 	return result;
 }
 
-void DH::createKeys() {
+void DH_EX::createKeys()
+{
 	gen = generatePrime();
 	mod = generatePrime();
 
@@ -151,18 +160,21 @@ void DH::createKeys() {
 	}
 }
 
-unsigned __int64 DH::createInterKey() {
+unsigned __int64 DH_EX::createInterKey()
+{
 	priv = rng(maxNum);
 	return pub = XpowYmodN(gen,priv,mod);
 }
 
-unsigned __int64 DH::createEncryptionKey(unsigned __int64 interKey) {
+unsigned __int64 DH_EX::createEncryptionKey(unsigned __int64 interKey)
+{
 	if (interKey >= maxNum)
 		throw Except("interKey larger than maxNum");
 	return key = XpowYmodN(interKey,priv,mod);
 }
 
-void DH::cleanMem(DWORD flags) { // marscha (TODO): SecureZeroMemory?
+void DH_EX::cleanMem(DWORD flags)
+{ // marscha (TODO): SecureZeroMemory?
 	gen  = 0;
 	mod  = 0;
 	priv = 0;
@@ -172,7 +184,8 @@ void DH::cleanMem(DWORD flags) { // marscha (TODO): SecureZeroMemory?
 		key = 0;
 }
 
-unsigned __int64 DH::getValue(DWORD flags) {
+unsigned __int64 DH_EX::getValue(DWORD flags)
+{
 	switch (flags) {
 		case DH_MOD:
 			return mod;

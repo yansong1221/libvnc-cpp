@@ -14,6 +14,7 @@
 #include <queue>
 #include <set>
 #include <span>
+#include "stream/stream.hpp"
 
 namespace libvnc {
 
@@ -131,12 +132,13 @@ private:
 public:
 	boost::asio::strand<boost::asio::any_io_executor> strand_;
 	boost::asio::ip::tcp::resolver resolver_;
-	boost::asio::ip::tcp::socket socket_;
+	vnc_stream_ptr stream_;
 	std::deque<std::vector<uint8_t>> send_que_;
 
 	std::string host_ = "127.0.0.1";
 	uint16_t port_ = 5900;
 	bool share_desktop_ = true;
+	bool use_ssl_ = false;
 	std::atomic_int compress_level_ = 3;
 	std::atomic_int quality_level_ = 9;
 	std::string notifiction_text_;

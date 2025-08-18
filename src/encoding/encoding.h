@@ -5,6 +5,7 @@
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <spdlog/spdlog.h>
+#include "stream/stream.hpp"
 
 namespace libvnc::encoding {
 
@@ -29,7 +30,7 @@ public:
 	virtual proto::rfbEncoding encoding_code() const = 0;
 	virtual std::string codec_name() const = 0;
 	virtual bool is_frame_codec() const { return false; }
-	virtual boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket,
+	virtual boost::asio::awaitable<error> decode(vnc_stream_type &socket,
 						     const proto::rfbRectangle &rect, frame_buffer &buffer,
 						     std::shared_ptr<frame_op> op) = 0;
 	virtual bool request_last_rect_encoding() const { return false; }
@@ -40,7 +41,7 @@ public:
 class frame_codec : public codec {
 public:
 	bool is_frame_codec() const final { return true; }
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
 		if (!buffer.check_rect(rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value())) {

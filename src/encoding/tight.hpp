@@ -52,7 +52,7 @@ requires std::is_integral_v<T> static error rgb24_to_pixel(const proto::rfbPixel
 	auto src_p = static_cast<const uint8_t *>(rgb24.data());
 	auto dst_p = reinterpret_cast<T *>(rgb24.data());
 
-	for (int i = pix_count - 1; i >= 0; i--) {
+	for (std::size_t i = pix_count - 1; i >= 0; i--) {
 		uint8_t r = src_p[i * 3];
 		uint8_t g = src_p[i * 3 + 1];
 		uint8_t b = src_p[i * 3 + 2];
@@ -62,7 +62,7 @@ requires std::is_integral_v<T> static error rgb24_to_pixel(const proto::rfbPixel
 	return error{};
 }
 
-static boost::asio::awaitable<error> read_compact_len(boost::asio::ip::tcp::socket &socket, long &len) noexcept
+static boost::asio::awaitable<error> read_compact_len(vnc_stream_type &socket, long &len) noexcept
 {
 	try {
 		uint8_t b;
@@ -90,16 +90,16 @@ class filter {
 public:
 	virtual ~filter() = default;
 
-	virtual boost::asio::awaitable<error> init_filter(boost::asio::ip::tcp::socket &socket,
-							  const proto::rfbPixelFormat &format, int &bitsPixel) = 0;
+	virtual boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+							  int &bitsPixel) = 0;
 	virtual boost::asio::awaitable<error> proc_filter(boost::asio::const_buffer decompress_data,
 							  const proto::rfbRectangle &rect, frame_buffer &frame) = 0;
 };
 
 class copy_filter : public filter {
 public:
-	boost::asio::awaitable<error> init_filter(boost::asio::ip::tcp::socket &socket,
-						  const proto::rfbPixelFormat &format, int &bitsPerPixel) override
+	boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+						  int &bitsPerPixel) override
 	{
 		bitsPerPixel = detail::tight_bits_per_pixel(format);
 		co_return error{};
@@ -191,8 +191,8 @@ class palette_filter : public filter {
 	};
 
 public:
-	boost::asio::awaitable<error> init_filter(boost::asio::ip::tcp::socket &socket,
-						  const proto::rfbPixelFormat &format, int &bitsPerPixel) override
+	boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+						  int &bitsPerPixel) override
 	{
 		bitsPerPixel = detail::tight_bits_per_pixel(format);
 
@@ -259,8 +259,8 @@ private:
 
 class gradient_filter : public filter {
 public:
-	boost::asio::awaitable<error> init_filter(boost::asio::ip::tcp::socket &socket,
-						  const proto::rfbPixelFormat &format, int &bitsPerPixel) override
+	boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+						  int &bitsPerPixel) override
 	{
 		bitsPerPixel = detail::tight_bits_per_pixel(format);
 		co_return error{};
@@ -309,10 +309,10 @@ public:
 	bool request_compress_level() const override { return true; }
 	bool request_quality_level() const override { return true; }
 
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &frame, std::shared_ptr<frame_op> op) override
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
-		if (auto err = co_await frame_codec::decode(socket, rect, frame, op); err)
+		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
 			co_return err;
 
 		int rx = rect.x.value();
@@ -343,9 +343,9 @@ public:
 			readUncompressed = true;
 		}
 		if (comp_ctl == rfbTightFill)
-			co_return co_await tight_fill(socket, rect, frame);
+			co_return co_await tight_fill(socket, rect, buffer);
 		else if (comp_ctl == rfbTightJpeg)
-			co_return co_await tight_jpeg(socket, rect, frame);
+			co_return co_await tight_jpeg(socket, rect, buffer);
 		else if (comp_ctl > rfbTightMaxSubencoding) {
 			co_return error::make_error(custom_error::frame_error,
 						    "Tight encoding: bad subencoding value received.");
@@ -387,7 +387,7 @@ public:
 		}
 
 		int bitsPixel = 0;
-		if (auto err = co_await _filter->init_filter(socket, frame.pixel_format(), bitsPixel); err)
+		if (auto err = co_await _filter->init_filter(socket, buffer.pixel_format(), bitsPixel); err)
 			co_return err;
 
 		/* Determine if the data should be decompressed or just copied. */
@@ -399,7 +399,7 @@ public:
 			if (ec)
 				co_return error::make_error(ec);
 
-			if (auto err = co_await _filter->proc_filter(buffer_.data(), rect, frame); err)
+			if (auto err = co_await _filter->proc_filter(buffer_.data(), rect, buffer); err)
 				co_return err;
 
 			buffer_.consume(allBytes);
@@ -417,7 +417,7 @@ public:
 			co_return error::make_error(ec);
 
 		if (readUncompressed) {
-			if (auto err = co_await _filter->proc_filter(buffer_.data(), rect, frame); err)
+			if (auto err = co_await _filter->proc_filter(buffer_.data(), rect, buffer); err)
 				co_return err;
 
 			buffer_.consume(compressedLen);
@@ -433,14 +433,15 @@ public:
 			co_return error::make_error(custom_error::frame_error, "Tight zlib error.");
 		}
 
-		if (auto err = co_await _filter->proc_filter(boost::asio::buffer(decompress_buffer_), rect, frame); err)
+		if (auto err = co_await _filter->proc_filter(boost::asio::buffer(decompress_buffer_), rect, buffer);
+		    err)
 			co_return err;
 
 		co_return error{};
 	}
 
 private:
-	boost::asio::awaitable<error> tight_fill(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> tight_fill(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 						 frame_buffer &frame)
 	{
 
@@ -462,7 +463,7 @@ private:
 		if (ec)
 			co_return error::make_error(ec);
 		//if (!format.bigEndian.value())
-			//std::reverse(fill_colour.begin(), fill_colour.end());
+		//std::reverse(fill_colour.begin(), fill_colour.end());
 
 		if (detail::is_argb32_with_tight_rgb24(format))
 			detail::rgb24_to_pixel<uint32_t>(format, fill_colour);
@@ -470,7 +471,7 @@ private:
 		frame.fill_rect(rx, ry, rw, rh, fill_colour.data());
 		co_return error{};
 	}
-	boost::asio::awaitable<error> tight_jpeg(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> tight_jpeg(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 						 frame_buffer &frame)
 	{
 		auto format = frame.pixel_format();

@@ -12,7 +12,7 @@ public:
 	std::string codec_name() const override { return "raw"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRaw; }
 
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
 		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)

@@ -18,10 +18,10 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZlib; }
 	bool request_compress_level() const override { return true; }
 
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &frame, std::shared_ptr<frame_op> op) override
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
-		if (auto err = co_await frame_codec::decode(socket, rect, frame, op); err)
+		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
 			co_return err;
 
 		int x = rect.x.value();
@@ -44,10 +44,10 @@ public:
 		if (ec)
 			co_return error::make_error(ec);
 
-		auto row_bytes = w * frame.bytes_per_pixel();
+		auto row_bytes = w * buffer.bytes_per_pixel();
 
 		for (int i = 0; i < h; ++i) {
-			auto ptr = frame.data(x, y + i);
+			auto ptr = buffer.data(x, y + i);
 			z_is_->read((char *)ptr, row_bytes);
 			auto read_count = z_is_->gcount();
 			if (read_count != row_bytes) {

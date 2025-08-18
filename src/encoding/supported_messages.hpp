@@ -13,8 +13,8 @@ public:
 	void init() override {}
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingSupportedMessages; }
 
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &frame, std::shared_ptr<frame_op> op) override
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
 		boost::system::error_code ec;
 		proto::rfbSupportedMessages supportedMessages = {0};

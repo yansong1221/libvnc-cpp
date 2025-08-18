@@ -66,12 +66,12 @@
 #define DH_PUB	4
 #define DH_KEY	5
 
-class DH
+class DH_EX
 {
 public:
-	DH();
-	DH(unsigned __int64 generator, unsigned __int64 modulus);
-	~DH();
+	DH_EX();
+	DH_EX(unsigned __int64 generator, unsigned __int64 modulus);
+	~DH_EX();
 
 	void createKeys();
 	unsigned __int64 createInterKey();

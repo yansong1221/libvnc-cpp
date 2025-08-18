@@ -1,0 +1,84 @@
+#pragma once
+#include <boost/asio/ip/tcp.hpp>
+#include <type_traits>
+#include <variant>
+#include <vector>
+
+namespace libvnc {
+
+struct crypto_provider {
+	virtual ~crypto_provider() = default;
+	virtual std::vector<std::uint8_t> encrypt(const std::uint8_t *plain, std::size_t len) = 0;
+	virtual std::vector<std::uint8_t> decrypt(const std::uint8_t *data, std::size_t len) = 0;
+};
+
+template<typename... T> class variant_stream : public std::variant<T...> {
+public:
+	using std::variant<T...>::variant;
+
+public:
+	using executor_type = boost::asio::any_io_executor;
+	using lowest_layer_type = boost::asio::ip::tcp::socket::lowest_layer_type;
+
+	executor_type get_executor()
+	{
+		return std::visit([&](auto &t) mutable { return t.get_executor(); }, *this);
+	}
+	lowest_layer_type &lowest_layer()
+	{
+		return std::visit([&](auto &t) mutable -> lowest_layer_type & { return t.lowest_layer(); }, *this);
+	}
+	const lowest_layer_type &lowest_layer() const
+	{
+		return std::visit([&](auto &t) mutable -> const lowest_layer_type & { return t.lowest_layer(); },
+				  *this);
+	}
+	template<typename MutableBufferSequence, typename ReadHandler>
+	auto async_read_some(const MutableBufferSequence &buffers, ReadHandler &&handler)
+	{
+		return std::visit(
+			[&, handler = std::move(handler)](auto &t) mutable {
+				if (!provider_)
+					return t.async_read_some(buffers, std::forward<ReadHandler>(handler));
+			},
+			*this);
+	}
+	template<typename ConstBufferSequence, typename WriteHandler>
+	auto async_write_some(const ConstBufferSequence &buffers, WriteHandler &&handler)
+	{
+		return std::visit(
+			[&, handler = std::move(handler)](auto &t) mutable {
+				if (!provider_)
+					return t.async_write_some(buffers, std::forward<WriteHandler>(handler));
+			},
+			*this);
+	}
+
+	boost::asio::ip::tcp::endpoint remote_endpoint() { return lowest_layer().remote_endpoint(); }
+	boost::asio::ip::tcp::endpoint remote_endpoint(boost::system::error_code &ec)
+	{
+		return lowest_layer().remote_endpoint(ec);
+	}
+
+	boost::asio::ip::tcp::endpoint local_endpoint() { return lowest_layer().local_endpoint(); }
+	boost::asio::ip::tcp::endpoint local_endpoint(boost::system::error_code &ec)
+	{
+		return lowest_layer().local_endpoint(ec);
+	}
+
+	void shutdown(boost::asio::socket_base::shutdown_type what, boost::system::error_code &ec)
+	{
+		lowest_layer().shutdown(what, ec);
+	}
+
+	bool is_open() const { return lowest_layer().is_open(); }
+
+	void close(boost::system::error_code &ec) { lowest_layer().close(ec); }
+
+	void set_provider(std::unique_ptr<crypto_provider> &&provider) { provider_ = std::move(provider); }
+
+private:
+	std::unique_ptr<crypto_provider> provider_;
+};
+
+} // namespace libvnc

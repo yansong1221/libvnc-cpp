@@ -8,7 +8,7 @@ namespace libvnc::encoding {
 class cursor : public codec {
 public:
 	void init() override {}
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
 		int xhot = rect.x.value();
@@ -54,9 +54,8 @@ public:
 	}
 
 protected:
-	virtual boost::asio::awaitable<error> read_rc_source(boost::asio::ip::tcp::socket &socket, int width,
-							     int height, std::size_t bytesMaskData,
-							     std::size_t bytesPerRow) = 0;
+	virtual boost::asio::awaitable<error> read_rc_source(vnc_stream_type &socket, int width, int height,
+							     std::size_t bytesMaskData, std::size_t bytesPerRow) = 0;
 
 protected:
 	frame_buffer rcSource_;
@@ -68,7 +67,7 @@ public:
 	std::string codec_name() const override { return "xcursor"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingXCursor; }
 
-	boost::asio::awaitable<error> read_rc_source(boost::asio::ip::tcp::socket &socket, int width, int height,
+	boost::asio::awaitable<error> read_rc_source(vnc_stream_type &socket, int width, int height,
 						     std::size_t bytesMaskData, std::size_t bytesPerRow) override
 	{
 		boost::system::error_code ec;
@@ -137,7 +136,7 @@ class rich_cursor : public cursor {
 public:
 	std::string codec_name() const override { return "richcursor"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRichCursor; }
-	boost::asio::awaitable<error> read_rc_source(boost::asio::ip::tcp::socket &socket, int width, int height,
+	boost::asio::awaitable<error> read_rc_source(vnc_stream_type &socket, int width, int height,
 						     std::size_t bytesMaskData, std::size_t bytesPerRow) override
 	{
 		boost::system::error_code ec;

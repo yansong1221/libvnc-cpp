@@ -16,7 +16,7 @@ public:
 	bool request_last_rect_encoding() const override { return true; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingUltra; }
 
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
 		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
@@ -90,10 +90,10 @@ public:
 	bool request_last_rect_encoding() const override { return true; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingUltraZip; }
 
-	boost::asio::awaitable<error> decode(boost::asio::ip::tcp::socket &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &frame, std::shared_ptr<frame_op> op) override
+	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
-		if (auto err = co_await frame_codec::decode(socket, rect, frame, op); err)
+		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
 			co_return err;
 
 		boost::system::error_code ec;
@@ -115,7 +115,7 @@ public:
 		int ry = rect.y.value();
 		int rw = rect.w.value();
 		int rh = rect.h.value();
-		int byte_pixel = frame.bytes_per_pixel();
+		int byte_pixel = buffer.bytes_per_pixel();
 
 		lzo_uint uncompressedBytes = ry + (rw * 65535);
 		unsigned int numCacheRects = rx;
@@ -164,7 +164,7 @@ public:
 			ptr += 4;
 
 			if (se.value() == proto::rfbEncodingRaw) {
-				frame.got_bitmap(ptr, sx.value(), sy.value(), sw.value(), sh.value());
+				buffer.got_bitmap(ptr, sx.value(), sy.value(), sw.value(), sh.value());
 				ptr += ((sw.value() * sh.value()) * byte_pixel);
 			}
 		}
