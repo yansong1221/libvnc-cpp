@@ -5,6 +5,7 @@
 #include <boost/asio/streambuf.hpp>
 #include <turbojpeg.h>
 #include <zstr.hpp>
+#include "helper.hpp"
 
 namespace libvnc::encoding {
 
@@ -26,40 +27,6 @@ static int tight_bits_per_pixel(const proto::rfbPixelFormat &format)
 		return 24;
 
 	return format.bitsPerPixel.value();
-}
-
-template<typename T>
-requires std::is_integral_v<T> static T rgb24_to_pixel(const proto::rfbPixelFormat &format, int r, int g, int b)
-{
-	return ((((T)(r) & 0xFF) * format.redMax.value() + 127) / 255 << format.redShift.value() |
-		(((T)(g) & 0xFF) * format.greenMax.value() + 127) / 255 << format.greenShift.value() |
-		(((T)(b) & 0xFF) * format.blueMax.value() + 127) / 255 << format.blueShift.value());
-}
-
-template<typename T>
-requires std::is_integral_v<T> static error rgb24_to_pixel(const proto::rfbPixelFormat &format,
-							   std::vector<uint8_t> &rgb24)
-{
-	if (rgb24.size() % 3 != 0) {
-		return error::make_error(custom_error::frame_error, "The input pixel format is not RGB24");
-	}
-	auto pix_count = rgb24.size() / 3;
-	auto bytes_pix = sizeof(T);
-
-	if (bytes_pix > 3)
-		rgb24.resize(bytes_pix * pix_count);
-
-	auto src_p = static_cast<const uint8_t *>(rgb24.data());
-	auto dst_p = reinterpret_cast<T *>(rgb24.data());
-
-	for (std::size_t i = pix_count - 1; i >= 0; i--) {
-		uint8_t r = src_p[i * 3];
-		uint8_t g = src_p[i * 3 + 1];
-		uint8_t b = src_p[i * 3 + 2];
-		dst_p[i] = rgb24_to_pixel<T>(format, r, g, b);
-	}
-	rgb24.resize(bytes_pix * pix_count);
-	return error{};
 }
 
 static boost::asio::awaitable<error> read_compact_len(vnc_stream_type &socket, long &len) noexcept
@@ -116,7 +83,7 @@ public:
 		if (is_argb32_with_tight_rgb24(format)) {
 			buffer_.resize(decompress_data.size());
 			boost::asio::buffer_copy(boost::asio::buffer(buffer_), decompress_data);
-			if (auto err = rgb24_to_pixel<uint32_t>(format, buffer_); err)
+			if (auto err = helper::rgb24_to_pixel<uint32_t>(format, buffer_); err)
 				co_return err;
 
 			decompress_data = boost::asio::buffer(buffer_);
@@ -212,7 +179,7 @@ public:
 			co_return error::make_error(ec);
 
 		if (is_argb32_with_tight_rgb24(format)) {
-			if (auto err = rgb24_to_pixel<uint32_t>(format, tightPalette_); err)
+			if (auto err = helper::rgb24_to_pixel<uint32_t>(format, tightPalette_); err)
 				co_return err;
 		}
 
@@ -466,7 +433,7 @@ private:
 		//std::reverse(fill_colour.begin(), fill_colour.end());
 
 		if (detail::is_argb32_with_tight_rgb24(format))
-			detail::rgb24_to_pixel<uint32_t>(format, fill_colour);
+			helper::rgb24_to_pixel<uint32_t>(format, fill_colour);
 
 		frame.fill_rect(rx, ry, rw, rh, fill_colour.data());
 		co_return error{};
@@ -529,7 +496,7 @@ private:
 		}
 
 		if (bytes_pixel == 2) {
-			auto err = detail::rgb24_to_pixel<uint16_t>(format, decompress_buffer_);
+			auto err = helper::rgb24_to_pixel<uint16_t>(format, decompress_buffer_);
 			if (err)
 				co_return err;
 			frame.got_bitmap(decompress_buffer_.data(), rx, ry, rw, rh);
