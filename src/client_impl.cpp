@@ -36,6 +36,7 @@
 #include <zstr.hpp>
 #endif
 #include "stream/stream.hpp"
+#include "encoding/zrle.hpp"
 
 namespace libvnc {
 
@@ -104,6 +105,7 @@ client_impl::client_impl(const boost::asio::any_io_executor &executor) : strand_
 	register_auth_message(proto::rfbUltraMSLogonII, &client_impl::on_rfbUltraMSLogonII, this);
 	register_auth_message(proto::rfbClientInitExtraMsgSupport, &client_impl::on_rfbClientInitExtraMsgSupport, this);
 
+	register_encoding<encoding::zrle>();
 	register_encoding<encoding::tight>();
 	register_encoding<encoding::ultra>();
 	register_encoding<encoding::zlib>();
@@ -754,8 +756,14 @@ boost::asio::awaitable<error> client_impl::server_message_loop()
 				boost::system::errc::make_error_code(boost::system::errc::wrong_protocol_type));
 		}
 
-		if (auto err = co_await iter->second(); err)
-			co_return err;
+		try {
+			if (auto err = co_await iter->second(); err)
+				co_return err;
+
+		} catch (const std::exception &e) {
+
+			spdlog::error("Unhandled exception: {}",e.what());
+		}
 	}
 	co_return error{};
 }

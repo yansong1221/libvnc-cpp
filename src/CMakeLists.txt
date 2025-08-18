@@ -2,7 +2,7 @@ SET(MOUDLE libvnc-cpp)
 
 
 
-find_package(Boost REQUIRED COMPONENTS asio endian)
+find_package(Boost REQUIRED COMPONENTS asio endian iostreams)
 find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -31,7 +31,7 @@ source_group(TREE ${LIBVNC_CPP_INCLUDE_DIR} PREFIX "include" FILES ${MOUDLE_HEAD
 
 add_library(${MOUDLE} ${MOUDLE_SOURCE_FILES} ${MOUDLE_HEADER_FILES})
 
-target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian
+target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian Boost::iostreams
 OpenSSL::SSL OpenSSL::Crypto
 spdlog::spdlog   
 zstr::zstr  ZLIB::ZLIB
