@@ -4,13 +4,6 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <zstr.hpp>
-
-#include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
-#include <boost/iostreams/filter/zstd.hpp>
-#include <boost/iostreams/filter/gzip.hpp>
-#include <boost/iostreams/device/back_inserter.hpp>
-
 #include "helper.hpp"
 
 namespace libvnc::encoding {
@@ -122,23 +115,10 @@ class zrle : public frame_codec {
 	};
 
 public:
-	zrle() {}
-	~zrle()
-	{
-		if (decompStreamInited) {
-			inflateEnd(&decompStream);
-			decompStreamInited = false;
-		}
-	}
 	void init() override
 	{
-		decompress_buffer_.consume(decompress_buffer_.size());
-		//z_is_ = std::make_unique<zstr::istream>(&buffer_, zstr::default_buff_size, false, 15);
-
-		if (decompStreamInited) {
-			inflateEnd(&decompStream);
-			decompStreamInited = false;
-		}
+		read_buffer_.consume(read_buffer_.size());
+		z_is_ = std::make_unique<zstr::istream>(&read_buffer_, zstr::default_buff_size, false, 15);
 	}
 	std::string codec_name() const override { return "zrle"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZRLE; }
@@ -168,129 +148,43 @@ public:
 		auto format = frame.pixel_format();
 
 		uint32_t maxColor = format.max_color();
+		uint8_t bytes_per_pixel = format.bytes_per_pixel();
 
 		bool fitsInLS3Bytes = maxColor < (1 << 24);
 		bool fitsInMS3Bytes = (maxColor & 0xff) == 0;
 		bool isLowCPixel =
-			(format.bytes_per_pixel() == 4) && (format.depth.value() <= 24) &&
+			(bytes_per_pixel == 4) && (format.depth.value() <= 24) &&
 			((fitsInLS3Bytes && !format.bigEndian.value()) || (fitsInMS3Bytes && format.bigEndian.value()));
 		bool isHighCPixel =
-			(format.bytes_per_pixel() == 4) && (format.depth.value() <= 24) &&
+			(bytes_per_pixel == 4) && (format.depth.value() <= 24) &&
 			((fitsInLS3Bytes && format.bigEndian.value()) || (fitsInMS3Bytes && !format.bigEndian.value()));
 
-		int min_buffer_size = rw * rh * sizeof(uint32_t) * 2;
-
-		auto d_buffer = decompress_buffer_.prepare(min_buffer_size);
-
-		/* Need to initialize the decompressor state. */
-		decompStream.next_in = (Bytef *)buffer_.data();
-		decompStream.avail_in = 0;
-		decompStream.next_out = (Bytef *)d_buffer.data();
-		decompStream.avail_out = d_buffer.size();
-		decompStream.data_type = Z_BINARY;
-
-		int inflateResult;
-		/* Initialize the decompression stream structures on the first invocation. */
-		if (decompStreamInited == FALSE) {
-
-			inflateResult = inflateInit(&decompStream);
-
-			if (inflateResult != Z_OK) {
-				co_return error::make_error(custom_error::frame_error,
-							    fmt::format("inflateInit returned error: {}, msg: {}",
-									inflateResult, decompStream.msg));
-			}
-
-			decompStreamInited = TRUE;
-		}
-		inflateResult = Z_OK;
-
-		for (; remaining > 0;) {
-			auto bytes = co_await boost::asio::async_read(
-				socket, boost::asio::buffer(buffer_, std::min<std::size_t>(remaining, buffer_.size())),
-				net_awaitable[ec]);
-			if (ec)
-				co_return error::make_error(ec);
-
-			decompStream.next_in = (Bytef *)buffer_.data();
-			decompStream.avail_in = bytes;
-
-			/* Need to uncompress buffer full. */
-			inflateResult = inflate(&decompStream, Z_SYNC_FLUSH);
-
-			/* We never supply a dictionary for compression. */
-			if (inflateResult == Z_NEED_DICT) {
-				co_return error::make_error(custom_error::frame_error,
-							    "zlib inflate needs a dictionary!");
-				//return FALSE;
-			}
-			if (inflateResult < 0) {
-				co_return error::make_error(custom_error::frame_error,
-							    fmt::format("zlib inflate returned error: {}, msg: {}",
-									inflateResult, decompStream.msg));
-			}
-
-			remaining -= bytes;
-		}
-		if (inflateResult != Z_OK) {
-			co_return error::make_error(custom_error::frame_error,
-						    fmt::format("zlib inflate returned error: {}, msg: {}",
-								inflateResult, decompStream.msg));
-		}
-		remaining = min_buffer_size - decompStream.avail_out;
-
-		decompress_buffer_.commit(remaining);
-		if (decompress_buffer_.size() == 0) {
-			spdlog::error("11111111111111111111111111");
-		}
-
-		int total_size = decompress_buffer_.size();
-
-		std::istream is(&decompress_buffer_);
+		co_await boost::asio::async_read(socket, read_buffer_, boost::asio::transfer_exactly(remaining),
+						 net_awaitable[ec]);
+		if (ec)
+			co_return error::make_error(ec);
 
 		for (int j = 0; j < rh; j += rfbZRLETileHeight) {
 			for (int i = 0; i < rw; i += rfbZRLETileWidth) {
 				int subWidth = (i + rfbZRLETileWidth > rw) ? rw - i : rfbZRLETileWidth;
 				int subHeight = (j + rfbZRLETileHeight > rh) ? rh - j : rfbZRLETileHeight;
 
-				if (format.bytes_per_pixel() == 1) {
-					handle_zrle_tile<uint8_t>(frame, is, isLowCPixel, isHighCPixel, rx + i, ry + j,
-								  subWidth, subHeight);
-				} else if (format.bytes_per_pixel() == 2) {
-					handle_zrle_tile<uint16_t>(frame, is, isLowCPixel, isHighCPixel, rx + i, ry + j,
-								   subWidth, subHeight);
-				} else if (format.bytes_per_pixel() == 4) {
-					handle_zrle_tile<uint32_t>(frame, is, isLowCPixel, isHighCPixel, rx + i, ry + j,
-								   subWidth, subHeight);
+				if (bytes_per_pixel == 1) {
+					handle_zrle_tile<uint8_t>(frame, *z_is_, isLowCPixel, isHighCPixel, rx + i,
+								  ry + j, subWidth, subHeight);
+				} else if (bytes_per_pixel == 2) {
+					handle_zrle_tile<uint16_t>(frame, *z_is_, isLowCPixel, isHighCPixel, rx + i,
+								   ry + j, subWidth, subHeight);
+				} else if (bytes_per_pixel == 4) {
+					handle_zrle_tile<uint32_t>(frame, *z_is_, isLowCPixel, isHighCPixel, rx + i,
+								   ry + j, subWidth, subHeight);
 				}
 			}
 		}
-		remaining = decompress_buffer_.size();
-		auto use_size = total_size - remaining;
-		if (remaining != 0) {
-			spdlog::error("222222222222222222222222");
+
+		if (read_buffer_.size() != 0) {
+			co_return error::make_error(custom_error::frame_error, "zrle zlib error");
 		}
-		decompress_buffer_.consume(decompress_buffer_.size());
-		co_return error{};
-
-		//z_stream_.flush();
-		//z_stream_.flush();
-
-		//z_stream_.push(boost::iostreams::zlib_decompressor());
-		//z_stream_.push(decompress_buffer_);
-		//zstr::istream z_is(&buffer_, zstr::default_buff_size, false, 15);
-		//bits_reader reader(*z_is_, real_bpp, shift);
-
-		//int min_buffer_size = rw * rh * (real_bpp / 8) * 2;
-		//auto buffer = decompress_buffer_.prepare(min_buffer_size);
-		//decompress_buffer_.resize(min_buffer_size);
-		//z_is_->read((char *)buffer.data(), buffer.size());
-		//int read_count = z_is_->gcount();
-		/*if (buffer_.size() != 0)
-			co_return error::make_error(custom_error::frame_error, "zrle zlib error");*/
-
-		//decompress_buffer_.commit(read_count);
-
 		co_return error{};
 	}
 	template<typename T>
@@ -413,10 +307,7 @@ public:
 	}
 
 private:
-	z_stream decompStream = {0};
-	bool decompStreamInited = false;
-
-	std::array<uint8_t, 640 * 480> buffer_;
-	boost::asio::streambuf decompress_buffer_;
+	boost::asio::streambuf read_buffer_;
+	std::unique_ptr<zstr::istream> z_is_;
 };
 } // namespace libvnc::encoding
