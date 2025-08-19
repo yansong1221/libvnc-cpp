@@ -32,11 +32,13 @@
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <string.h>
+#include "stream/stream.hpp"
+#include "encoding/zrle.hpp"
+#include "rsa_aes.hpp"
+
 #if defined(LIBVNC_HAVE_LIBZ)
 #include <zstr.hpp>
 #endif
-#include "stream/stream.hpp"
-#include "encoding/zrle.hpp"
 
 namespace libvnc {
 
@@ -104,6 +106,8 @@ client_impl::client_impl(const boost::asio::any_io_executor &executor) : strand_
 	register_auth_message(proto::rfbUltraVNC, &client_impl::on_rfbUltraVNC, this);
 	register_auth_message(proto::rfbUltraMSLogonII, &client_impl::on_rfbUltraMSLogonII, this);
 	register_auth_message(proto::rfbClientInitExtraMsgSupport, &client_impl::on_rfbClientInitExtraMsgSupport, this);
+	register_auth_message(proto::rfbRSAAES_256, &client_impl::on_rfbRSAAES_256, this);
+	register_auth_message(proto::rfbRSAAESne_256, &client_impl::on_rfbRSAAESne_256, this);
 
 	register_encoding<encoding::zrle>();
 	register_encoding<encoding::tight>();
@@ -893,6 +897,12 @@ proto::rfbAuthScheme client_impl::select_auth_scheme(const std::set<proto::rfbAu
 	if (auths.count(proto::rfbUltraVNC))
 		return proto::rfbUltraVNC;
 
+	if (auths.count(proto::rfbRSAAESne_256))
+		return proto::rfbRSAAESne_256;
+
+	if (auths.count(proto::rfbRSAAES_256))
+		return proto::rfbRSAAES_256;
+
 	if (auths.count(proto::rfbClientInitExtraMsgSupport))
 		return proto::rfbClientInitExtraMsgSupport;
 
@@ -1035,6 +1045,95 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbClientInitExtraMsgSuppo
 	if (auto err = co_await async_send_client_init_extra_msg(); err)
 		co_return err;
 	co_return co_await read_auth_result();
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbRSAAES_256()
+{
+	co_return co_await AuthRSAAES(256, true);
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbRSAAESne_256()
+{
+	co_return co_await AuthRSAAES(256, false);
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool encrypted)
+{
+	static const int MinRsaKeyLength = 1024;
+	static const int MaxRsaKeyLength = 8192;
+
+	try {
+
+		//ReadPublicKey
+		boost::endian::big_uint32_buf_t length{};
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(&length, sizeof(length)));
+		if (length.value() < MinRsaKeyLength) {
+			co_return error::make_error(custom_error::auth_error,
+						    fmt::format("Server RSA key is too small ({})", length.value()));
+		}
+		if (length.value() > MaxRsaKeyLength) {
+			co_return error::make_error(custom_error::auth_error,
+						    fmt::format("Server RSA key is too big ({})", length.value()));
+		}
+		uint32_t bytes = (length.value() + 7) / 8;
+
+		std::vector<uint8_t> modulus(bytes);
+		std::vector<uint8_t> exp(bytes);
+
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(modulus));
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(exp));
+
+		for (DWORD i = 0; i < bytes - 4; i++) {
+			if (exp[i] != 0) {
+				co_return error::make_error(custom_error::auth_error,
+							    fmt::format("Server RSA exponent is too big ({})", i));
+			}
+		}
+
+		auto server_rsa_pub_key = rsa_aes::make_rsa_pubkey(modulus, exp);
+		if (!server_rsa_pub_key) {
+			co_return error::make_error(custom_error::auth_error, fmt::format("Invalid server RSA key !"));
+		}
+
+		// WritePublicKey
+		auto client_rsa_key = rsa_aes::generate_rsa_key();
+
+		length = EVP_PKEY_bits(client_rsa_key);
+		rsa_aes::extract_rsa_pubkey(client_rsa_key, modulus, exp);
+
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(&length, sizeof(length)));
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(modulus));
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(exp));
+
+		// WriteRandom
+		std::vector<uint8_t> client_random_key(keySize / 8);
+		if (RAND_bytes(client_random_key.data(), client_random_key.size()) != 1) {
+			co_return error::make_error(custom_error::auth_error,
+						    "openssl failed to generate random numbers");
+		}
+		std::vector<uint8_t> buffer;
+		rsa_aes::rsa_encrypt(server_rsa_pub_key, client_random_key, buffer);
+
+		boost::endian::big_uint16_buf_t len{};
+		len = buffer.size();
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(&len, sizeof(len)));
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(buffer));
+
+		//ReadRandom
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(&len, sizeof(len)));
+		buffer.resize(len.value());
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(buffer));
+
+		std::vector<uint8_t> server_random_key;
+		rsa_aes::rsa_decrypt(client_rsa_key, buffer, server_random_key);
+
+		//SetCipher
+		co_return error{};
+
+
+	} catch (const boost::system::system_error &e) {
+		co_return error::make_error(e.code());
+	}
 }
 
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate()

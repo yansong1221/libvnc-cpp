@@ -100,6 +100,10 @@ private:
 	boost::asio::awaitable<error> on_rfbUltraVNC();
 	boost::asio::awaitable<error> on_rfbUltraMSLogonII();
 	boost::asio::awaitable<error> on_rfbClientInitExtraMsgSupport();
+	boost::asio::awaitable<error> on_rfbRSAAES_256();
+	boost::asio::awaitable<error> on_rfbRSAAESne_256();
+
+	boost::asio::awaitable<error> AuthRSAAES(int keySize, bool encrypted);
 
 private:
 	boost::asio::awaitable<error> on_rfbFramebufferUpdate();
