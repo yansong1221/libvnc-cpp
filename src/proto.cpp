@@ -72,4 +72,15 @@ void rfbPixelFormat::print() const
 	spdlog::info(message);
 }
 
+uint32_t rfbPixelFormat::max_color() const
+{
+	return (redMax.value() << redShift.value()) | (greenMax.value() << greenShift.value()) |
+	       (blueMax.value() << blueShift.value());
+}
+
+uint8_t rfbPixelFormat::bytes_per_pixel() const
+{
+	return bitsPerPixel.value() / 8;
+}
+
 } // namespace libvnc::proto

@@ -285,6 +285,9 @@ struct rfbPixelFormat {
 
 	rfbPixelFormat() = default;
 	rfbPixelFormat(int bitsPerSample, int samplesPerPixel, int bytesPerPixel);
+
+	uint8_t bytes_per_pixel() const;
+	uint32_t max_color() const;
 	void print() const;
 };
 

@@ -11,6 +11,7 @@ Widget::Widget(QWidget* parent)
     timer->start();
     connect(timer, &QTimer::timeout, this, [this]() { ioc_.poll(); });
     client_.set_host("127.0.0.1");
+    //client_.set_host("192.168.101.8");
     //client_.set_host("100.64.0.15");
     client_.start();
 }
@@ -46,7 +47,7 @@ void Widget::on_cursor_shape(int xhot,
                              const uint8_t* rc_mask)
 {
     auto image =
-        QImage(rc_source.data(), rc_source.width(), rc_source.height(), QImage::Format_RGB32);
+        QImage(rc_source.data(), rc_source.width(), rc_source.height(), QImage::Format_ARGB32);
     int w = rc_source.width();
     int h = rc_source.height();
     for (int x = 0; x < rc_source.width(); ++x) {

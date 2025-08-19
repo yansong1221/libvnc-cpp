@@ -15,6 +15,64 @@
 
 namespace libvnc::encoding {
 
+namespace detail {
+static inline uint32_t readOpaque24A(std::istream &is)
+{
+	uint32_t r = 0;
+	is.read(&((char *)&r)[0], 1);
+	is.read(&((char *)&r)[1], 1);
+	is.read(&((char *)&r)[2], 1);
+	return r;
+}
+static inline uint32_t readOpaque24B(std::istream &is)
+{
+	uint32_t r = 0;
+	is.read(&((char *)&r)[1], 1);
+	is.read(&((char *)&r)[2], 1);
+	is.read(&((char *)&r)[3], 1);
+	return r;
+}
+
+static inline uint8_t read_u8(std::istream &is)
+{
+	uint8_t r = 0;
+	is.read((char *)&r, 1);
+	return r;
+}
+
+inline uint8_t readOpaque8(std::istream &is)
+{
+	return read_u8(is);
+}
+inline uint16_t readOpaque16(std::istream &is)
+{
+	uint16_t r;
+	((uint8_t *)&r)[0] = read_u8(is);
+	((uint8_t *)&r)[1] = read_u8(is);
+	return r;
+}
+inline uint32_t readOpaque32(std::istream &is)
+{
+	uint32_t r;
+	((uint8_t *)&r)[0] = read_u8(is);
+	((uint8_t *)&r)[1] = read_u8(is);
+	((uint8_t *)&r)[2] = read_u8(is);
+	((uint8_t *)&r)[3] = read_u8(is);
+	return r;
+}
+
+template<class T> static inline T readPixel(std::istream &is)
+{
+	if (sizeof(T) == 1)
+		return readOpaque8(is);
+	if (sizeof(T) == 2)
+		return readOpaque16(is);
+	if (sizeof(T) == 4)
+		return readOpaque32(is);
+}
+
+} // namespace detail
+
 class zrle : public frame_codec {
 
 	constexpr static auto rfbZRLETileWidth = 64;
@@ -22,10 +80,9 @@ class zrle : public frame_codec {
 
 	class bits_reader {
 	public:
-		bits_reader(std::istream &is, int bpp, int shift = 0) : is_(is), bpp_(bpp), shift_(shift) {}
+		bits_reader(std::istream &is) : is_(is) {}
 
-		uint32_t read() { return read(bpp_, shift_); }
-		uint32_t read(int bpp, int shift = 0)
+		uint32_t read(int bpp)
 		{
 			uint32_t result = 0;
 			if (bpp % 8 == 0) {
@@ -37,12 +94,6 @@ class zrle : public frame_codec {
 					result = (result << 1) | read_bit();
 				}
 			}
-
-			if (shift < 0)
-				result <<= -shift;
-			else if (shift > 0)
-				result >>= shift;
-
 			return result;
 		}
 
@@ -66,18 +117,28 @@ class zrle : public frame_codec {
 
 	private:
 		std::istream &is_;
-		int shift_;
-		int bpp_;
 		int bit_pos_ = 8;
 		uint8_t cur_byte_ = 0;
 	};
 
 public:
 	zrle() {}
+	~zrle()
+	{
+		if (decompStreamInited) {
+			inflateEnd(&decompStream);
+			decompStreamInited = false;
+		}
+	}
 	void init() override
 	{
 		decompress_buffer_.consume(decompress_buffer_.size());
 		//z_is_ = std::make_unique<zstr::istream>(&buffer_, zstr::default_buff_size, false, 15);
+
+		if (decompStreamInited) {
+			inflateEnd(&decompStream);
+			decompStreamInited = false;
+		}
 	}
 	std::string codec_name() const override { return "zrle"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZRLE; }
@@ -106,34 +167,18 @@ public:
 
 		auto format = frame.pixel_format();
 
-		auto bpp = format.bitsPerPixel.value();
-		auto real_bpp = bpp;
-		int shift = 0;
+		uint32_t maxColor = format.max_color();
 
-		//Down + >> 8bit
-		//Up - << 8bit
-		if (bpp == 16 && format.greenMax.value() <= 0x1F)
-			real_bpp = 15;
-		if (bpp == 32) {
-			uint32_t maxColor = (format.redMax.value() << format.redShift.value()) |
-					    (format.greenMax.value() << format.greenShift.value()) |
-					    (format.blueMax.value() << format.blueShift.value());
+		bool fitsInLS3Bytes = maxColor < (1 << 24);
+		bool fitsInMS3Bytes = (maxColor & 0xff) == 0;
+		bool isLowCPixel =
+			(format.bytes_per_pixel() == 4) && (format.depth.value() <= 24) &&
+			((fitsInLS3Bytes && !format.bigEndian.value()) || (fitsInMS3Bytes && format.bigEndian.value()));
+		bool isHighCPixel =
+			(format.bytes_per_pixel() == 4) && (format.depth.value() <= 24) &&
+			((fitsInLS3Bytes && format.bigEndian.value()) || (fitsInMS3Bytes && !format.bigEndian.value()));
 
-			if ((format.bigEndian.value() && (maxColor & 0xff) == 0) ||
-			    (!format.bigEndian.value() && (maxColor & 0xff000000) == 0)) {
-				real_bpp = 24;
-			} else if (!format.bigEndian.value() && (maxColor & 0xff) == 0) {
-				real_bpp = 24;
-				shift = -8;
-				//左移8位
-			} else if (format.bigEndian.value() && (maxColor & 0xff000000) == 0) {
-				real_bpp = 24;
-				shift = 8;
-				//右移8位
-			}
-		}
-
-		int min_buffer_size = rw * rh * (real_bpp / 8) * 2;
+		int min_buffer_size = rw * rh * sizeof(uint32_t) * 2;
 
 		auto d_buffer = decompress_buffer_.prepare(min_buffer_size);
 
@@ -151,6 +196,9 @@ public:
 			inflateResult = inflateInit(&decompStream);
 
 			if (inflateResult != Z_OK) {
+				co_return error::make_error(custom_error::frame_error,
+							    fmt::format("inflateInit returned error: {}, msg: {}",
+									inflateResult, decompStream.msg));
 			}
 
 			decompStreamInited = TRUE;
@@ -172,21 +220,31 @@ public:
 
 			/* We never supply a dictionary for compression. */
 			if (inflateResult == Z_NEED_DICT) {
-				//rfbClientLog("zlib inflate needs a dictionary!\n");
+				co_return error::make_error(custom_error::frame_error,
+							    "zlib inflate needs a dictionary!");
 				//return FALSE;
 			}
-			/*if (inflateResult < 0) {
-				rfbClientLog("zlib inflate returned error: %d, msg: %s\n", inflateResult,
-					     client->decompStream.msg);
-				return FALSE;
-			}*/
+			if (inflateResult < 0) {
+				co_return error::make_error(custom_error::frame_error,
+							    fmt::format("zlib inflate returned error: {}, msg: {}",
+									inflateResult, decompStream.msg));
+			}
 
 			remaining -= bytes;
 		}
-		decompress_buffer_.commit(decompStream.avail_out);
+		if (inflateResult != Z_OK) {
+			co_return error::make_error(custom_error::frame_error,
+						    fmt::format("zlib inflate returned error: {}, msg: {}",
+								inflateResult, decompStream.msg));
+		}
+		remaining = min_buffer_size - decompStream.avail_out;
+
+		decompress_buffer_.commit(remaining);
 		if (decompress_buffer_.size() == 0) {
 			spdlog::error("11111111111111111111111111");
 		}
+
+		int total_size = decompress_buffer_.size();
 
 		std::istream is(&decompress_buffer_);
 
@@ -195,13 +253,26 @@ public:
 				int subWidth = (i + rfbZRLETileWidth > rw) ? rw - i : rfbZRLETileWidth;
 				int subHeight = (j + rfbZRLETileHeight > rh) ? rh - j : rfbZRLETileHeight;
 
-				handle_zrle_tile(frame, is, real_bpp, rx + i, ry + j, subWidth, subHeight);
+				if (format.bytes_per_pixel() == 1) {
+					handle_zrle_tile<uint8_t>(frame, is, isLowCPixel, isHighCPixel, rx + i, ry + j,
+								  subWidth, subHeight);
+				} else if (format.bytes_per_pixel() == 2) {
+					handle_zrle_tile<uint16_t>(frame, is, isLowCPixel, isHighCPixel, rx + i, ry + j,
+								   subWidth, subHeight);
+				} else if (format.bytes_per_pixel() == 4) {
+					handle_zrle_tile<uint32_t>(frame, is, isLowCPixel, isHighCPixel, rx + i, ry + j,
+								   subWidth, subHeight);
+				}
 			}
+		}
+		remaining = decompress_buffer_.size();
+		auto use_size = total_size - remaining;
+		if (remaining != 0) {
+			spdlog::error("222222222222222222222222");
 		}
 		decompress_buffer_.consume(decompress_buffer_.size());
 		co_return error{};
 
-		
 		//z_stream_.flush();
 		//z_stream_.flush();
 
@@ -220,115 +291,125 @@ public:
 
 		//decompress_buffer_.commit(read_count);
 
-		
 		co_return error{};
 	}
-	void handle_zrle_tile(frame_buffer &frame, std::istream &is, int real_bpp, int rx, int ry, int rw,
-			      int rh) noexcept
+	template<typename T>
+	void handle_zrle_tile(frame_buffer &frame, std::istream &is, bool isLowCPixel, bool isHighCPixel, int rx,
+			      int ry, int rw, int rh) noexcept
 	{
 		auto format = frame.pixel_format();
 		auto bbp = format.bitsPerPixel.value();
 
-		uint8_t type = 0;
-		is.read((char *)&type, sizeof(type));
+		int mode = detail::read_u8(is);
+		bool rle = mode & 128;
+		int palSize = mode & 127;
+		T palette[128] = {0};
 
-		if (type == 0) /* raw */ {
+		for (int i = 0; i < palSize; i++) {
+			if (isLowCPixel)
+				palette[i] = detail::readOpaque24A(is);
+			else if (isHighCPixel)
+				palette[i] = detail::readOpaque24B(is);
+			else
+				palette[i] = detail::readPixel<T>(is);
+		}
+		if (palSize == 1) {
+			T pix = palette[0];
+			frame.fill_rect(rx, ry, rw, rh, (uint8_t *)&pix);
+			return;
+		}
+		if (!rle) {
+			if (palSize == 0) {
+				if (isLowCPixel || isHighCPixel) {
+					for (int y = 0; y < rh; ++y) {
+						for (int x = 0; x < rw; ++x) {
+							auto ptr = frame.data(rx + x, ry + y);
+							if (isLowCPixel)
+								*((T *)ptr) = detail::readOpaque24A(is);
+							else
+								*((T *)ptr) = detail::readOpaque24B(is);
+						}
+					}
+				} else {
+					auto row_bytes = rw * sizeof(T);
+					for (int y = 0; y < rh; ++y) {
+						auto ptr = frame.data(rx, ry + y);
+						is.read((char *)ptr, row_bytes);
+					}
+				}
+			} else {
+				// packed pixels
+				int bppp = ((palSize > 16) ? 8 : ((palSize > 4) ? 4 : ((palSize > 2) ? 2 : 1)));
 
-			auto row_bytes = rw * real_bpp / 8;
-			std::vector<uint8_t> row_data;
+				for (int y = 0; y < rh; ++y) {
 
-			for (int y = 0; y < rh; ++y) {
-				row_data.resize(row_bytes);
-				is.read((char *)row_data.data(), row_data.size());
-				helper::rgb24_to_pixel<uint32_t>(format, row_data);
-				frame.got_bitmap(row_data.data(), rx, ry + y, rw, 1);
-				//auto ptr = frame.data(rx, ry + y);
+					bits_reader reader(is);
 
-				/*for (int x = 0; x < rw; ++x) {
-					uint32_t val = reader.read();
-					frame.got_bitmap((uint8_t *)&val, rx + x, ry + y, 1, 1);
-				}*/
+					for (int x = 0; x < rw; ++x) {
+						int index = reader.read(bppp);
+						frame.got_bitmap((uint8_t *)&palette[index], rx + x, ry + y, 1, 1);
+					}
+				}
 			}
 		} else {
+			if (palSize == 0) {
+				int i = 0, j = 0;
+				while (j < rh) {
+					// plain RLE
+					T pix = 0;
+					if (isLowCPixel)
+						pix = detail::readOpaque24A(is);
+					else if (isHighCPixel)
+						pix = detail::readOpaque24B(is);
+					else
+						pix = detail::readPixel<T>(is);
+
+					int length = 1;
+					uint8_t b = 0;
+					do {
+						b = detail::read_u8(is);
+						length += b;
+					} while (b == 255);
+
+					while (j < rh && length > 0) {
+						frame.got_bitmap((uint8_t *)&pix, rx + i, ry + j, 1, 1);
+						length--;
+						i++;
+						if (i >= rw) {
+							i = 0;
+							j++;
+						}
+					}
+				}
+			} else {
+				// palette RLE
+
+				int i = 0, j = 0;
+				while (j < rh) {
+					int index = detail::read_u8(is);
+					int length = 1;
+
+					if (index & 0x80) {
+						uint8_t b = 0;
+						do {
+							b = detail::read_u8(is);
+							length += b;
+						} while (b == 0xFF);
+					}
+					index &= 0x7F;
+
+					while (j < rh && length > 0) {
+						frame.got_bitmap((uint8_t *)&palette[index], rx + i, ry + j, 1, 1);
+						length--;
+						i++;
+						if (i >= rw) {
+							i = 0;
+							j++;
+						}
+					}
+				}
+			}
 		}
-		//else if (type == 1) {
-		//	uint32_t val = reader.read();
-		//	frame.fill_rect(rx, ry, rw, ry, (uint8_t *)&val);
-		//} else if (type <= 127) /* packed Palette */
-		//{
-		//	uint32_t palette[128] = {0};
-		//	for (int i = 0; i < type; ++i) {
-		//		palette[i] = reader.read();
-		//	}
-
-		//	int bpp = (type > 4 ? (type > 16 ? 8 : 4) : (type > 2 ? 2 : 1));
-
-		//	for (int y = 0; y < rh; ++y) {
-		//		for (int x = 0; x < rw; ++x) {
-		//			uint32_t index = reader.read(bpp, 0);
-		//			frame.got_bitmap((uint8_t *)&palette[index], rx + x, ry + y, 1, 1);
-		//		}
-		//	}
-		//} else if (type == 128) {
-		//	int i = 0, j = 0;
-		//	while (j < rh) {
-
-		//		uint32_t color = reader.read();
-		//		int length = 1;
-
-		//		while (true) {
-		//			auto val = reader.read_byte();
-		//			if (val == 0xff) {
-		//				length += val;
-		//				break;
-		//			}
-		//			length += val;
-		//		}
-		//		while (j < rh && length > 0) {
-		//			frame.got_bitmap((uint8_t *)&color, rx + i, ry + j, 1, 1);
-		//			length--;
-		//			i++;
-		//			if (i >= rw) {
-		//				i = 0;
-		//				j++;
-		//			}
-		//		}
-		//	}
-		//} else if (type >= 130) {
-		//	uint32_t palette[128] = {0};
-		//	for (int i = 0; i < type - 128; i++) {
-		//		palette[i] = reader.read();
-		//	}
-		//	int i = 0, j = 0;
-		//	while (j < rh) {
-
-		//		int val = reader.read_byte();
-
-		//		uint32_t color = val & 0x7f;
-		//		int length = 1;
-
-		//		if (val & 0x80) {
-		//			while (true) {
-		//				auto val = reader.read_byte();
-		//				if (val == 0xff) {
-		//					length += val;
-		//					break;
-		//				}
-		//				length += val;
-		//			}
-		//		}
-
-		//		while (j < rh && length > 0) {
-		//			frame.got_bitmap((uint8_t *)&color, rx + i, ry + j, 1, 1);
-		//			length--;
-		//			i++;
-		//			if (i >= rw) {
-		//				i = 0;
-		//				j++;
-		//			}
-		//		}
-		//	}
-		//}
 	}
 
 private:
