@@ -10,7 +10,7 @@ namespace libvnc {
 
 class custom_error {
 public:
-	enum code : int { none = 0, auth_error = 1, client_init_error = 2, frame_error };
+	enum code : int { none = 0, auth_error = 1, client_init_error = 2, frame_error, logic_error };
 
 	custom_error() = default;
 	custom_error(code c, std::string msg);

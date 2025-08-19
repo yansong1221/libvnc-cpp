@@ -16,7 +16,6 @@ public:
 	}
 	std::string codec_name() const override { return "zlib"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZlib; }
-	bool request_compress_level() const override { return true; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override

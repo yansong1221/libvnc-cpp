@@ -13,7 +13,6 @@ class ultra : public frame_codec {
 public:
 	void init() override {}
 	std::string codec_name() const override { return "ultra"; }
-	bool request_last_rect_encoding() const override { return true; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingUltra; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
@@ -87,15 +86,11 @@ class ultra_zip : public frame_codec {
 public:
 	void init() override {}
 	std::string codec_name() const override { return "ultrazip"; }
-	bool request_last_rect_encoding() const override { return true; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingUltraZip; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
 	{
-		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
-			co_return err;
-
 		boost::system::error_code ec;
 		boost::endian::big_int32_buf_t nBytes{};
 

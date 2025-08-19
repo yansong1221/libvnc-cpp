@@ -30,12 +30,8 @@ public:
 	virtual proto::rfbEncoding encoding_code() const = 0;
 	virtual std::string codec_name() const = 0;
 	virtual bool is_frame_codec() const { return false; }
-	virtual boost::asio::awaitable<error> decode(vnc_stream_type &socket,
-						     const proto::rfbRectangle &rect, frame_buffer &buffer,
-						     std::shared_ptr<frame_op> op) = 0;
-	virtual bool request_last_rect_encoding() const { return false; }
-	virtual bool request_compress_level() const { return false; }
-	virtual bool request_quality_level() const { return false; }
+	virtual boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+						     frame_buffer &buffer, std::shared_ptr<frame_op> op) = 0;
 };
 
 class frame_codec : public codec {

@@ -122,7 +122,6 @@ public:
 	}
 	std::string codec_name() const override { return "zrle"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZRLE; }
-	bool request_compress_level() const override { return true; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &frame, std::shared_ptr<frame_op> op) noexcept override

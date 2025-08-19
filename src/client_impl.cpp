@@ -158,13 +158,11 @@ void client_impl::start()
 {
 	boost::asio::co_spawn(
 		strand_,
-		[this, self = shared_from_this()]() -> boost::asio::awaitable<void> {
-			error err = co_await co_start();
-		},
+		[this, self = shared_from_this()]() -> boost::asio::awaitable<void> { error err = co_await co_run(); },
 		boost::asio::detached);
 }
 
-boost::asio::awaitable<libvnc::error> client_impl::co_start()
+boost::asio::awaitable<libvnc::error> client_impl::co_run()
 {
 	if (status_ != client::status::closed)
 		co_return error::make_error(
@@ -660,10 +658,6 @@ bool client_impl::send_frame_encodings(const std::vector<std::string> &encodings
 {
 	std::vector<boost::endian::big_uint32_buf_t> encs;
 
-	bool requestCompressLevel = false;
-	bool requestQualityLevel = false;
-	bool requestLastRectEncoding = false;
-
 	auto apply_codecs = codecs_ | std::views::filter([&](const auto &enc) {
 				    if (!enc->is_frame_codec())
 					    return true;
@@ -674,26 +668,12 @@ bool client_impl::send_frame_encodings(const std::vector<std::string> &encodings
 				    return iter != encodings.end();
 			    });
 
-	for (const auto &codec : apply_codecs) {
+	for (const auto &codec : apply_codecs)
 		encs.emplace_back(codec->encoding_code());
 
-		if (codec->request_compress_level())
-			requestCompressLevel = true;
-		if (codec->request_quality_level())
-			requestQualityLevel = true;
-		if (codec->request_last_rect_encoding())
-			requestLastRectEncoding = true;
-	}
-
-	if (requestCompressLevel)
-		encs.emplace_back(compress_level_ + proto::rfbEncodingCompressLevel0);
-
-	if (requestQualityLevel)
-		encs.emplace_back(quality_level_ + proto::rfbEncodingQualityLevel0);
-
-	if (requestLastRectEncoding)
-		encs.emplace_back(proto::rfbEncodingLastRect);
-
+	encs.emplace_back(compress_level_ + proto::rfbEncodingCompressLevel0);
+	encs.emplace_back(quality_level_ + proto::rfbEncodingQualityLevel0);
+	encs.emplace_back(proto::rfbEncodingLastRect);
 #ifdef LIBVNC_HAVE_LIBZ
 	encs.emplace_back(proto::rfbEncodingExtendedClipboard);
 #endif
@@ -761,8 +741,8 @@ boost::asio::awaitable<error> client_impl::server_message_loop()
 				co_return err;
 
 		} catch (const std::exception &e) {
-
-			spdlog::error("Unhandled exception: {}",e.what());
+			co_return error::make_error(custom_error::logic_error,
+						    fmt::format("Unhandled exception: {}", e.what()));
 		}
 	}
 	co_return error{};

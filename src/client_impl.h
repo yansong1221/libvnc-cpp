@@ -55,7 +55,7 @@ public:
 	std::vector<std::string> supported_frame_encodings() const;
 
 private:
-	boost::asio::awaitable<error> co_start();
+	boost::asio::awaitable<error> co_run();
 	boost::asio::awaitable<error> async_connect_rfbserver();
 	boost::asio::awaitable<error> async_handshake();
 	boost::asio::awaitable<error> async_authenticate();
