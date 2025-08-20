@@ -7,6 +7,7 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(botan CONFIG REQUIRED)
+find_package(cryptopp CONFIG REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(ZStrGitRepo
@@ -34,6 +35,7 @@ add_library(${MOUDLE} ${MOUDLE_SOURCE_FILES} ${MOUDLE_HEADER_FILES})
 
 target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian
 OpenSSL::SSL OpenSSL::Crypto
+cryptopp::cryptopp
 spdlog::spdlog   
 zstr::zstr  ZLIB::ZLIB
 JPEG::JPEG
