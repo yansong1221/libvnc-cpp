@@ -3,6 +3,7 @@
 #include <boost/asio/detail/socket_ops.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/endian/buffers.hpp>
+#include <boost/endian/conversion.hpp>
 #include <cstdint>
 
 namespace libvnc::proto {
@@ -161,8 +162,8 @@ enum rfbAuthScheme : uint8_t {
 	rfbInvalidAuth = rfbConnFailed,
 	rfbNoAuth = 1,
 	rfbVncAuth = 2,
-	rfbRA2 = 5,
-	rfbRA2ne = 6,
+	rfbRSAAES = 5,
+	rfbRSAAESne = 6,
 	rfbSSPI = 7,
 	rfbSSPIne = 8,
 	rfbTight = 16,

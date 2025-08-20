@@ -102,6 +102,8 @@ private:
 	boost::asio::awaitable<error> on_rfbClientInitExtraMsgSupport();
 	boost::asio::awaitable<error> on_rfbRSAAES_256();
 	boost::asio::awaitable<error> on_rfbRSAAESne_256();
+	boost::asio::awaitable<error> on_rfbRSAAES();
+	boost::asio::awaitable<error> on_rfbRSAAESne();
 
 	boost::asio::awaitable<error> AuthRSAAES(int keySize, bool encrypted);
 

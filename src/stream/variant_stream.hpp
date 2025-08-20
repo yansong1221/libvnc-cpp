@@ -40,6 +40,44 @@ public:
 			[&, handler = std::move(handler)](auto &t) mutable {
 				if (!provider_)
 					return t.async_read_some(buffers, std::forward<ReadHandler>(handler));
+
+				return boost::asio::async_initiate<ReadHandler,
+								   void(boost::system::error_code, std::size_t)>(
+					[this, &t, buffers](auto completion_handler) mutable {
+						// 2. 异步读取加密数据
+						t.async_read_some(
+							boost::asio::buffer(buffers),
+							[this, completion_handler = std::move(completion_handler),
+							 buffers](boost::system::error_code ec,
+								  std::size_t bytes_read) mutable {
+								if (ec) {
+									completion_handler(ec, 0);
+									return;
+								}
+
+								try {
+									// 3. 解密数据
+									auto decrypted_data = provider_->decrypt(
+										(uint8_t *)buffers.data(), bytes_read);
+
+									// 4. 将解密后的数据复制到用户缓冲区
+									std::size_t bytes_written =
+										boost::asio::buffer_copy(
+											buffers,
+											boost::asio::buffer(
+												decrypted_data));
+
+									completion_handler(ec, bytes_written);
+								} catch (...) {
+									// 5. 处理解密异常
+									completion_handler(
+										make_error_code(
+											boost::system::errc::io_error),
+										0);
+								}
+							});
+					},
+					handler);
 			},
 			*this);
 	}
@@ -50,6 +88,37 @@ public:
 			[&, handler = std::move(handler)](auto &t) mutable {
 				if (!provider_)
 					return t.async_write_some(buffers, std::forward<WriteHandler>(handler));
+
+				// 加密模式：读取用户数据 -> 加密 -> 写入加密数据
+				using namespace boost::asio;
+
+				return async_initiate<WriteHandler, void(boost::system::error_code, std::size_t)>(
+					[this, &t, buffers](auto&& completion_handler) mutable {
+						try {
+							// 1. 从用户缓冲区复制数据
+							std::vector<uint8_t> plain_data(buffer_size(buffers));
+							buffer_copy(buffer(plain_data), buffers);
+
+							// 2. 加密数据
+							auto encrypted_data = provider_->encrypt(plain_data.data(),
+												 plain_data.size());
+
+							// 3. 异步写入加密数据
+							t.async_write_some(buffer(encrypted_data),
+									   [encrypted_data = std::move(encrypted_data),
+									    completion_handler =
+										    std::move(completion_handler)](
+										   boost::system::error_code ec,
+										   std::size_t bytes) mutable {
+										   completion_handler(ec, bytes);
+									   });
+						} catch (...) {
+							// 4. 处理加密异常
+							completion_handler(
+								make_error_code(boost::system::errc::io_error), 0);
+						}
+					},
+					handler);
 			},
 			*this);
 	}

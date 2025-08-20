@@ -35,6 +35,16 @@
 #include "stream/stream.hpp"
 #include "encoding/zrle.hpp"
 #include "rsa_aes.hpp"
+#include <botan/rsa.h>
+#include <botan/auto_rng.h>
+#include <botan/aead.h>
+#include <botan/symkey.h>
+#include <botan/pubkey.h>
+#include <botan/hex.h>
+#include <botan/pk_keys.h>
+#include <botan/pkcs8.h>
+#include <botan/rng.h>
+#include <botan/hash.h>
 
 #if defined(LIBVNC_HAVE_LIBZ)
 #include <zstr.hpp>
@@ -108,6 +118,8 @@ client_impl::client_impl(const boost::asio::any_io_executor &executor) : strand_
 	register_auth_message(proto::rfbClientInitExtraMsgSupport, &client_impl::on_rfbClientInitExtraMsgSupport, this);
 	register_auth_message(proto::rfbRSAAES_256, &client_impl::on_rfbRSAAES_256, this);
 	register_auth_message(proto::rfbRSAAESne_256, &client_impl::on_rfbRSAAESne_256, this);
+	register_auth_message(proto::rfbRSAAES, &client_impl::on_rfbRSAAES, this);
+	register_auth_message(proto::rfbRSAAESne, &client_impl::on_rfbRSAAESne, this);
 
 	register_encoding<encoding::zrle>();
 	register_encoding<encoding::tight>();
@@ -897,11 +909,17 @@ proto::rfbAuthScheme client_impl::select_auth_scheme(const std::set<proto::rfbAu
 	if (auths.count(proto::rfbUltraVNC))
 		return proto::rfbUltraVNC;
 
+	if (auths.count(proto::rfbRSAAES_256))
+		return proto::rfbRSAAES_256;
+
 	if (auths.count(proto::rfbRSAAESne_256))
 		return proto::rfbRSAAESne_256;
 
-	if (auths.count(proto::rfbRSAAES_256))
-		return proto::rfbRSAAES_256;
+	if (auths.count(proto::rfbRSAAES))
+		return proto::rfbRSAAES;
+
+	if (auths.count(proto::rfbRSAAESne))
+		return proto::rfbRSAAESne;
 
 	if (auths.count(proto::rfbClientInitExtraMsgSupport))
 		return proto::rfbClientInitExtraMsgSupport;
@@ -1057,6 +1075,16 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbRSAAESne_256()
 	co_return co_await AuthRSAAES(256, false);
 }
 
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbRSAAES()
+{
+	co_return co_await AuthRSAAES(128, true);
+}
+
+boost::asio::awaitable<libvnc::error> client_impl::on_rfbRSAAESne()
+{
+	co_return co_await AuthRSAAES(128, false);
+}
+
 boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool encrypted)
 {
 	static const int MinRsaKeyLength = 1024;
@@ -1065,21 +1093,22 @@ boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool 
 	try {
 
 		//ReadPublicKey
-		boost::endian::big_uint32_buf_t length{};
-		co_await boost::asio::async_read(*stream_, boost::asio::buffer(&length, sizeof(length)));
-		if (length.value() < MinRsaKeyLength) {
+
+		boost::endian::big_uint32_buf_t u32_length{};
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(&u32_length, sizeof(u32_length)));
+		if (u32_length.value() < MinRsaKeyLength) {
 			co_return error::make_error(custom_error::auth_error,
-						    fmt::format("Server RSA key is too small ({})", length.value()));
+						    fmt::format("Server RSA key is too small ({})",
+								u32_length.value()));
 		}
-		if (length.value() > MaxRsaKeyLength) {
+		if (u32_length.value() > MaxRsaKeyLength) {
 			co_return error::make_error(custom_error::auth_error,
-						    fmt::format("Server RSA key is too big ({})", length.value()));
+						    fmt::format("Server RSA key is too big ({})", u32_length.value()));
 		}
-		uint32_t bytes = (length.value() + 7) / 8;
+		uint32_t bytes = (u32_length.value() + 7) / 8;
 
 		std::vector<uint8_t> modulus(bytes);
 		std::vector<uint8_t> exp(bytes);
-
 		co_await boost::asio::async_read(*stream_, boost::asio::buffer(modulus));
 		co_await boost::asio::async_read(*stream_, boost::asio::buffer(exp));
 
@@ -1090,49 +1119,109 @@ boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool 
 			}
 		}
 
-		auto server_rsa_pub_key = rsa_aes::make_rsa_pubkey(modulus, exp);
-		if (!server_rsa_pub_key) {
-			co_return error::make_error(custom_error::auth_error, fmt::format("Invalid server RSA key !"));
-		}
+		Botan::RSA_PublicKey _server_rsa_pub_key(Botan::BigInt::from_bytes(modulus),
+							 Botan::BigInt::from_bytes(exp));
 
 		// WritePublicKey
-		auto client_rsa_key = rsa_aes::generate_rsa_key();
+		Botan::AutoSeeded_RNG rng;
+		Botan::RSA_PrivateKey _client_rsa_key(rng, 2048);
 
-		length = EVP_PKEY_bits(client_rsa_key);
-		rsa_aes::extract_rsa_pubkey(client_rsa_key, modulus, exp);
+		u32_length = _client_rsa_key.key_length();
+		bytes = (u32_length.value() + 7) / 8;
+		modulus.assign(bytes, 0);
+		exp.assign(bytes, 0);
 
-		co_await boost::asio::async_write(*stream_, boost::asio::buffer(&length, sizeof(length)));
+		_client_rsa_key.get_n().serialize_to(modulus);
+		_client_rsa_key.get_e().serialize_to(exp);
+
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(&u32_length, sizeof(u32_length)));
 		co_await boost::asio::async_write(*stream_, boost::asio::buffer(modulus));
 		co_await boost::asio::async_write(*stream_, boost::asio::buffer(exp));
 
 		// WriteRandom
-		std::vector<uint8_t> client_random_key(keySize / 8);
-		if (RAND_bytes(client_random_key.data(), client_random_key.size()) != 1) {
-			co_return error::make_error(custom_error::auth_error,
-						    "openssl failed to generate random numbers");
-		}
-		std::vector<uint8_t> buffer;
-		rsa_aes::rsa_encrypt(server_rsa_pub_key, client_random_key, buffer);
+		Botan::SymmetricKey client_random_key(rng, keySize / 8);
+		Botan::PK_Encryptor_EME enc(_server_rsa_pub_key, rng, "EME-PKCS1-v1_5");
 
-		boost::endian::big_uint16_buf_t len{};
-		len = buffer.size();
-		co_await boost::asio::async_write(*stream_, boost::asio::buffer(&len, sizeof(len)));
+		auto buffer = enc.encrypt(client_random_key.bits_of(), rng);
+
+		boost::endian::big_uint16_buf_t u16_length{};
+		u16_length = buffer.size();
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(&u16_length, sizeof(u16_length)));
 		co_await boost::asio::async_write(*stream_, boost::asio::buffer(buffer));
 
 		//ReadRandom
-		co_await boost::asio::async_read(*stream_, boost::asio::buffer(&len, sizeof(len)));
-		buffer.resize(len.value());
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(&u16_length, sizeof(u16_length)));
+		buffer.resize(u16_length.value());
 		co_await boost::asio::async_read(*stream_, boost::asio::buffer(buffer));
 
-		std::vector<uint8_t> server_random_key;
-		rsa_aes::rsa_decrypt(client_rsa_key, buffer, server_random_key);
+		Botan::PK_Decryptor_EME dec(_client_rsa_key, rng, "EME-PKCS1-v1_5");
+		Botan::SymmetricKey server_random_key(dec.decrypt(buffer));
 
 		//SetCipher
-		co_return error{};
+		std::unique_ptr<Botan::HashFunction> hash;
+		if (keySize == 128)
+			hash = Botan::HashFunction::create("SHA-1");
+		else if (keySize == 256)
+			hash = Botan::HashFunction::create("SHA-256");
+		else
+			co_return error::make_error(custom_error::auth_error,
+						    fmt::format("unknown AES bit({})", keySize));
 
+		hash->update(server_random_key);
+		hash->update(client_random_key);
+
+		auto hash_buffer = hash->final();
+		hash_buffer.resize(keySize / 8);
+		Botan::SymmetricKey enc_key(hash_buffer);
+
+		hash->update(client_random_key);
+		hash->update(server_random_key);
+
+		hash_buffer = hash->final();
+		hash_buffer.resize(keySize / 8);
+		Botan::SymmetricKey dec_key(hash_buffer);
+
+		stream_->set_provider(std::make_unique<aes_crypto_provider>(keySize, enc_key, dec_key));
+
+		//WriteHash
+		u32_length = _client_rsa_key.key_length();
+		bytes = (u32_length.value() + 7) / 8;
+		modulus.assign(bytes, 0);
+		exp.assign(bytes, 0);
+
+		_client_rsa_key.get_n().serialize_to(modulus);
+		_client_rsa_key.get_e().serialize_to(exp);
+
+		hash->update(u32_length.data(), sizeof(u32_length));
+		hash->update(modulus);
+		hash->update(exp);
+
+		u32_length = _server_rsa_pub_key.key_length();
+		bytes = (u32_length.value() + 7) / 8;
+		modulus.assign(bytes, 0);
+		exp.assign(bytes, 0);
+
+		_server_rsa_pub_key.get_n().serialize_to(modulus);
+		_server_rsa_pub_key.get_e().serialize_to(exp);
+
+		hash->update(u32_length.data(), sizeof(u32_length));
+		hash->update(modulus);
+		hash->update(exp);
+		
+		hash_buffer = hash->final();
+		hash_buffer.resize(keySize / 8);
+		co_await boost::asio::async_write(*stream_, boost::asio::buffer(hash_buffer));
+
+		//ReadHash
+		co_await boost::asio::async_read(*stream_, boost::asio::buffer(hash_buffer));
+
+
+		co_return error{};
 
 	} catch (const boost::system::system_error &e) {
 		co_return error::make_error(e.code());
+	} catch (const std::exception &e) {
+		co_return error::make_error(custom_error::auth_error, e.what());
 	}
 }
 

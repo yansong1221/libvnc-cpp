@@ -6,6 +6,7 @@ find_package(Boost REQUIRED COMPONENTS asio endian)
 find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(botan CONFIG REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(ZStrGitRepo
@@ -36,6 +37,7 @@ OpenSSL::SSL OpenSSL::Crypto
 spdlog::spdlog   
 zstr::zstr  ZLIB::ZLIB
 JPEG::JPEG
+$<IF:$<TARGET_EXISTS:Botan::Botan>,Botan::Botan,Botan::Botan-static>
 $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
 )
 
