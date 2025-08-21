@@ -4,6 +4,8 @@
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/streambuf.hpp>
+#include <span>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -12,8 +14,8 @@ namespace libvnc {
 
 struct crypto_provider {
       virtual ~crypto_provider() = default;
-      virtual std::vector<std::uint8_t> encrypt(const std::uint8_t* plain, std::size_t len) = 0;
-      virtual std::vector<std::uint8_t> decrypt(const std::uint8_t* data, std::size_t len) = 0;
+      virtual std::vector<std::uint8_t> encrypt(std::span<const std::uint8_t> plain) = 0;
+      virtual std::vector<std::uint8_t> decrypt(std::span<const std::uint8_t> data) = 0;
 };
 
 template <typename... T>
@@ -53,6 +55,18 @@ class variant_stream : public std::variant<T...> {
                         [this, &t, completion_handler = std::move(completion_handler), buffers]() mutable
                            -> awaitable<void> {
                            try {
+                              if(read_remaining_buffer_.size() > 0) {
+                                 boost::asio::post(
+                                    t.get_executor(),
+                                    [this, &t, completion_handler = std::move(completion_handler), buffers]() mutable {
+                                       std::size_t bytes_written = boost::asio::buffer_copy(
+                                          buffers, boost::asio::buffer(read_remaining_buffer_.data()));
+                                       read_remaining_buffer_.consume(bytes_written);
+                                       completion_handler(make_error_code(boost::system::errc::success), bytes_written);
+                                    });
+                                 co_return;
+                              }
+
                               for(;;) {
                                  boost::system::error_code ec;
                                  auto bytes_read = co_await t.async_read_some(buffers, net_awaitable[ec]);
@@ -60,15 +74,22 @@ class variant_stream : public std::variant<T...> {
                                     completion_handler(ec, 0);
                                     co_return;
                                  }
-                                 auto decrypted_data = provider_->decrypt((uint8_t*)buffers.data(), bytes_read);
+                                 auto decrypted_data = provider_->decrypt({(const uint8_t*)buffers.data(), bytes_read});
+                                 if(decrypted_data.empty())
+                                    continue;
+
                                  std::size_t bytes_written =
                                     boost::asio::buffer_copy(buffers, boost::asio::buffer(decrypted_data));
 
-                                 if(bytes_written == 0)
-                                    continue;
+                                 if(auto remaining_size = decrypted_data.size() - bytes_written; remaining_size > 0) {
+                                    boost::asio::buffer_copy(
+                                       read_remaining_buffer_.prepare(remaining_size),
+                                       boost::asio::buffer(decrypted_data.data() + bytes_written, remaining_size));
+                                    read_remaining_buffer_.commit(remaining_size);
+                                 }
 
                                  completion_handler(ec, bytes_written);
-                                 break;
+                                 co_return;
                               }
 
                            } catch(...) {
@@ -99,11 +120,8 @@ class variant_stream : public std::variant<T...> {
                         [this, &t, completion_handler = std::move(completion_handler), buffers]() mutable
                            -> awaitable<void> {
                            try {
-                              auto plain_bytes = buffer_size(buffers);
-                              std::vector<uint8_t> plain_data(plain_bytes);
-                              buffer_copy(buffer(plain_data), buffers);
-
-                              auto encrypted_data = provider_->encrypt(plain_data.data(), plain_data.size());
+                              auto encrypted_data =
+                                 provider_->encrypt({(const uint8_t*)buffers.data(), buffers.size()});
 
                               boost::system::error_code ec;
                               co_await boost::asio::async_write(t, buffer(encrypted_data), net_awaitable[ec]);
@@ -111,7 +129,7 @@ class variant_stream : public std::variant<T...> {
                                  completion_handler(ec, 0);
                                  co_return;
                               }
-                              completion_handler(ec, plain_bytes);
+                              completion_handler(ec, buffers.size());
                            } catch(...) {
                               completion_handler(make_error_code(boost::system::errc::io_error), 0);
                            }
@@ -147,6 +165,7 @@ class variant_stream : public std::variant<T...> {
 
    private:
       std::unique_ptr<crypto_provider> provider_;
+      boost::asio::streambuf read_remaining_buffer_;
 };
 
 }  // namespace libvnc

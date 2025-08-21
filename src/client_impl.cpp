@@ -127,12 +127,12 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor) : strand_
    register_auth_message(proto::rfbRSAAES, &client_impl::on_rfbRSAAES, this);
    register_auth_message(proto::rfbRSAAESne, &client_impl::on_rfbRSAAESne, this);
 
-   register_encoding<encoding::zrle>();
    register_encoding<encoding::tight>();
    register_encoding<encoding::ultra>();
-   register_encoding<encoding::zlib>();
    register_encoding<encoding::ultra_zip>();
    register_encoding<encoding::copy_rect>();
+   register_encoding<encoding::zrle>();
+   register_encoding<encoding::zlib>();
    register_encoding<encoding::co_rre>();
    register_encoding<encoding::rre>();
    register_encoding<encoding::hextile>();
@@ -179,7 +179,12 @@ void client_impl::start() {
    boost::asio::co_spawn(
       strand_,
       [this, self = shared_from_this()]() -> boost::asio::awaitable<void> { error err = co_await co_run(); },
-      boost::asio::detached);
+      [](std::exception_ptr e) {
+         if(!e)
+            return;
+
+         std::rethrow_exception(e);
+      });
 }
 
 boost::asio::awaitable<libvnc::error> client_impl::co_run() {
@@ -1062,8 +1067,6 @@ boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool 
                                         fmt::format("Server RSA exponent is too big ({})", i));
          }
       }
-      // auto encryptor = Botan::AEAD_Mode::create_or_throw("AES-256/EAX", ::Botan::Cipher_Dir::ENCRYPTION);
-
       Botan::RSA_PublicKey _server_rsa_pub_key(Botan::BigInt::from_bytes(modulus), Botan::BigInt::from_bytes(exp));
 
       // WritePublicKey
@@ -1118,62 +1121,68 @@ boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool 
       else
          co_return error::make_error(custom_error::auth_error, fmt::format("unknown AES bit({})", keySize));
 
-      hash->update(server_random_key | std::views::reverse | std::ranges::to<std::vector>());
-      hash->update(client_random_key | std::views::reverse | std::ranges::to<std::vector>());
+      hash->update(server_random_key);
+      hash->update(client_random_key);
 
-      auto hash_buffer = hash->final() | std::views::reverse | std::ranges::to<std::vector>();
+      auto hash_buffer = hash->final();
       hash_buffer.resize(keySize / 8);
       Botan::SymmetricKey enc_key(hash_buffer);
 
-      hash->update(client_random_key | std::views::reverse | std::ranges::to<std::vector>());
-      hash->update(server_random_key | std::views::reverse | std::ranges::to<std::vector>());
+      hash->update(client_random_key);
+      hash->update(server_random_key);
 
-      hash_buffer = hash->final() | std::views::reverse | std::ranges::to<std::vector>();
+      hash_buffer = hash->final();
       hash_buffer.resize(keySize / 8);
       Botan::SymmetricKey dec_key(hash_buffer);
 
       stream_->set_provider(std::make_unique<aes_crypto_provider>(keySize, enc_key, dec_key));
 
-      //WriteHash
-      std::vector<uint8_t> local_hash;
-      {
+      auto calc_hash = [&hash](const Botan::RSA_PublicKey& client_key, const Botan::RSA_PublicKey& server_key) {
          boost::endian::big_int32_buf_t u32_length;
          std::vector<uint8_t> modulus;
          std::vector<uint8_t> exp;
 
-         u32_length = _client_rsa_key.key_length();
-         bytes = _client_rsa_key.get_n().bytes();
+         u32_length = client_key.key_length();
+         auto bytes = client_key.get_n().bytes();
 
          modulus.assign(bytes, 0);
          exp.assign(bytes, 0);
 
-         _client_rsa_key.get_n().serialize_to(modulus);
-         _client_rsa_key.get_e().serialize_to(exp);
+         client_key.get_n().serialize_to(modulus);
+         client_key.get_e().serialize_to(exp);
 
          hash->update((uint8_t*)&u32_length, sizeof(u32_length));
          hash->update(modulus);
          hash->update(exp);
 
-         u32_length = _server_rsa_pub_key.key_length();
-         bytes = _server_rsa_pub_key.get_n().bytes();
+         u32_length = server_key.key_length();
+         bytes = server_key.get_n().bytes();
 
          modulus.assign(bytes, 0);
          exp.assign(bytes, 0);
 
-         _server_rsa_pub_key.get_n().serialize_to(modulus);
-         _server_rsa_pub_key.get_e().serialize_to(exp);
+         server_key.get_n().serialize_to(modulus);
+         server_key.get_e().serialize_to(exp);
 
          hash->update((uint8_t*)&u32_length, sizeof(u32_length));
          hash->update(modulus);
          hash->update(exp);
 
-         local_hash = hash->final<std::vector<uint8_t>>();
+         return hash->final<std::vector<uint8_t>>();
+      };
 
-         co_await boost::asio::async_write(*stream_, boost::asio::buffer(local_hash));
-      }
+      //WriteHash
+      std::vector<uint8_t> local_hash = calc_hash(_client_rsa_key, _server_rsa_pub_key);
+      { co_await boost::asio::async_write(*stream_, boost::asio::buffer(local_hash)); }
       //ReadHash
       std::vector<uint8_t> remote_hash(local_hash.size());
       { co_await boost::asio::async_read(*stream_, boost::asio::buffer(remote_hash)); }
+
+      auto my_hash = calc_hash(_server_rsa_pub_key, _client_rsa_key);
+
+      if(remote_hash != my_hash) {
+         co_return error::make_error(custom_error::auth_error, "RSA key hash mismatch");
+      }
 
       const int secTypeRA2UserPass = 1;
       const int secTypeRA2Pass = 2;
@@ -1181,7 +1190,40 @@ boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool 
       uint8_t subtype = 0;
       co_await boost::asio::async_read(*stream_, boost::asio::buffer(&subtype, sizeof(subtype)));
 
-      co_return error{};
+      if(subtype != secTypeRA2UserPass && subtype != secTypeRA2Pass) {
+         co_return error::make_error(custom_error::auth_error, fmt::format("Invalid subtype ({})", subtype));
+      }
+
+      if(subtype == secTypeRA2Pass) {
+         if(auto password = handler_.get_auth_password(); password) {
+            uint8_t len = 0;
+            co_await boost::asio::async_write(*stream_, boost::asio::buffer(&len, sizeof(len)));
+            len = password->size();
+            co_await boost::asio::async_write(*stream_, boost::asio::buffer(&len, sizeof(len)));
+            co_await boost::asio::async_write(*stream_, boost::asio::buffer(*password));
+         } else {
+            co_return error::make_error(custom_error::auth_error, "No password provided for RA2Pass authentication");
+         }
+      } else if(subtype == secTypeRA2UserPass) {
+         if(auto result = handler_.get_auth_ms_account(); result) {
+            uint8_t len = result->first.size();
+            co_await boost::asio::async_write(*stream_, boost::asio::buffer(&len, sizeof(len)));
+            co_await boost::asio::async_write(*stream_, boost::asio::buffer(result->first));
+
+            len = result->second.size();
+            co_await boost::asio::async_write(*stream_, boost::asio::buffer(&len, sizeof(len)));
+            co_await boost::asio::async_write(*stream_, boost::asio::buffer(result->second));
+         } else {
+            co_return error::make_error(custom_error::auth_error,
+                                        "No user/password provided for RA2UserPass authentication");
+         }
+      } else {
+         co_return error::make_error(custom_error::auth_error, fmt::format("Invalid subtype ({})", subtype));
+      }
+      if(!encrypted)
+         stream_->set_provider(nullptr);
+
+      co_return co_await read_auth_result();
 
    } catch(const boost::system::system_error& e) {
       co_return error::make_error(e.code());

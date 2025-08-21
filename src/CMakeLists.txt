@@ -7,11 +7,10 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(botan CONFIG REQUIRED)
-find_package(cryptopp CONFIG REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(ZStrGitRepo
-  GIT_REPOSITORY    "https://github.com/yansong1221/zstr.git" # can also be a local filesystem path!
+  GIT_REPOSITORY    "https://github.com/mateidavid/zstr.git" # can also be a local filesystem path!
   GIT_TAG           "master"
 )
 FetchContent_MakeAvailable(ZStrGitRepo) # defines INTERFACE target 'zstr::zstr'
@@ -35,7 +34,6 @@ add_library(${MOUDLE} ${MOUDLE_SOURCE_FILES} ${MOUDLE_HEADER_FILES})
 
 target_link_libraries(${MOUDLE} PUBLIC Boost::asio Boost::endian
 OpenSSL::SSL OpenSSL::Crypto
-cryptopp::cryptopp
 spdlog::spdlog   
 zstr::zstr  ZLIB::ZLIB
 JPEG::JPEG
