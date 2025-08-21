@@ -1,4 +1,8 @@
 #pragma once
+#include "use_awaitable.hpp"
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <type_traits>
 #include <variant>
@@ -7,147 +11,142 @@
 namespace libvnc {
 
 struct crypto_provider {
-	virtual ~crypto_provider() = default;
-	virtual std::vector<std::uint8_t> encrypt(const std::uint8_t *plain, std::size_t len) = 0;
-	virtual std::vector<std::uint8_t> decrypt(const std::uint8_t *data, std::size_t len) = 0;
+      virtual ~crypto_provider() = default;
+      virtual std::vector<std::uint8_t> encrypt(const std::uint8_t* plain, std::size_t len) = 0;
+      virtual std::vector<std::uint8_t> decrypt(const std::uint8_t* data, std::size_t len) = 0;
 };
 
-template<typename... T> class variant_stream : public std::variant<T...> {
-public:
-	using std::variant<T...>::variant;
+template <typename... T>
+class variant_stream : public std::variant<T...> {
+   public:
+      using std::variant<T...>::variant;
 
-public:
-	using executor_type = boost::asio::any_io_executor;
-	using lowest_layer_type = boost::asio::ip::tcp::socket::lowest_layer_type;
+   public:
+      using executor_type = boost::asio::any_io_executor;
+      using lowest_layer_type = boost::asio::ip::tcp::socket::lowest_layer_type;
 
-	executor_type get_executor()
-	{
-		return std::visit([&](auto &t) mutable { return t.get_executor(); }, *this);
-	}
-	lowest_layer_type &lowest_layer()
-	{
-		return std::visit([&](auto &t) mutable -> lowest_layer_type & { return t.lowest_layer(); }, *this);
-	}
-	const lowest_layer_type &lowest_layer() const
-	{
-		return std::visit([&](auto &t) mutable -> const lowest_layer_type & { return t.lowest_layer(); },
-				  *this);
-	}
-	template<typename MutableBufferSequence, typename ReadHandler>
-	auto async_read_some(const MutableBufferSequence &buffers, ReadHandler &&handler)
-	{
-		return std::visit(
-			[&, handler = std::move(handler)](auto &t) mutable {
-				if (!provider_)
-					return t.async_read_some(buffers, std::forward<ReadHandler>(handler));
+      executor_type get_executor() {
+         return std::visit([&](auto& t) mutable { return t.get_executor(); }, *this);
+      }
 
-				return boost::asio::async_initiate<ReadHandler,
-								   void(boost::system::error_code, std::size_t)>(
-					[this, &t, buffers](auto completion_handler) mutable {
-						// 2. 异步读取加密数据
-						t.async_read_some(
-							boost::asio::buffer(buffers),
-							[this, completion_handler = std::move(completion_handler),
-							 buffers](boost::system::error_code ec,
-								  std::size_t bytes_read) mutable {
-								if (ec) {
-									completion_handler(ec, 0);
-									return;
-								}
+      lowest_layer_type& lowest_layer() {
+         return std::visit([&](auto& t) mutable -> lowest_layer_type& { return t.lowest_layer(); }, *this);
+      }
 
-								try {
-									// 3. 解密数据
-									auto decrypted_data = provider_->decrypt(
-										(uint8_t *)buffers.data(), bytes_read);
+      const lowest_layer_type& lowest_layer() const {
+         return std::visit([&](auto& t) mutable -> const lowest_layer_type& { return t.lowest_layer(); }, *this);
+      }
 
-									// 4. 将解密后的数据复制到用户缓冲区
-									std::size_t bytes_written =
-										boost::asio::buffer_copy(
-											buffers,
-											boost::asio::buffer(
-												decrypted_data));
+      template <typename MutableBufferSequence, typename ReadHandler>
+      auto async_read_some(const MutableBufferSequence& buffers, ReadHandler&& handler) {
+         return std::visit(
+            [&, handler = std::move(handler)](auto& t) mutable {
+               if(!provider_)
+                  return t.async_read_some(buffers, std::forward<ReadHandler>(handler));
 
-									completion_handler(ec, bytes_written);
-								} catch (...) {
-									// 5. 处理解密异常
-									completion_handler(
-										make_error_code(
-											boost::system::errc::io_error),
-										0);
-								}
-							});
-					},
-					handler);
-			},
-			*this);
-	}
-	template<typename ConstBufferSequence, typename WriteHandler>
-	auto async_write_some(const ConstBufferSequence &buffers, WriteHandler &&handler)
-	{
-		return std::visit(
-			[&, handler = std::move(handler)](auto &t) mutable {
-				if (!provider_)
-					return t.async_write_some(buffers, std::forward<WriteHandler>(handler));
+               return boost::asio::async_initiate<ReadHandler, void(boost::system::error_code, std::size_t)>(
+                  [this, &t, buffers](auto&& completion_handler) mutable {
+                     using namespace boost::asio;
 
-				// 加密模式：读取用户数据 -> 加密 -> 写入加密数据
-				using namespace boost::asio;
+                     co_spawn(
+                        t.get_executor(),
+                        [this, &t, completion_handler = std::move(completion_handler), buffers]() mutable
+                           -> awaitable<void> {
+                           try {
+                              for(;;) {
+                                 boost::system::error_code ec;
+                                 auto bytes_read = co_await t.async_read_some(buffers, net_awaitable[ec]);
+                                 if(ec) {
+                                    completion_handler(ec, 0);
+                                    co_return;
+                                 }
+                                 auto decrypted_data = provider_->decrypt((uint8_t*)buffers.data(), bytes_read);
+                                 std::size_t bytes_written =
+                                    boost::asio::buffer_copy(buffers, boost::asio::buffer(decrypted_data));
 
-				return async_initiate<WriteHandler, void(boost::system::error_code, std::size_t)>(
-					[this, &t, buffers](auto&& completion_handler) mutable {
-						try {
-							// 1. 从用户缓冲区复制数据
-							std::vector<uint8_t> plain_data(buffer_size(buffers));
-							buffer_copy(buffer(plain_data), buffers);
+                                 if(bytes_written == 0)
+                                    continue;
 
-							// 2. 加密数据
-							auto encrypted_data = provider_->encrypt(plain_data.data(),
-												 plain_data.size());
+                                 completion_handler(ec, bytes_written);
+                                 break;
+                              }
 
-							// 3. 异步写入加密数据
-							t.async_write_some(buffer(encrypted_data),
-									   [encrypted_data = std::move(encrypted_data),
-									    completion_handler =
-										    std::move(completion_handler)](
-										   boost::system::error_code ec,
-										   std::size_t bytes) mutable {
-										   completion_handler(ec, bytes);
-									   });
-						} catch (...) {
-							// 4. 处理加密异常
-							completion_handler(
-								make_error_code(boost::system::errc::io_error), 0);
-						}
-					},
-					handler);
-			},
-			*this);
-	}
+                           } catch(...) {
+                              completion_handler(make_error_code(boost::system::errc::io_error), 0);
+                           }
+                           co_return;
+                        },
+                        detached);
+                  },
+                  handler);
+            },
+            *this);
+      }
 
-	boost::asio::ip::tcp::endpoint remote_endpoint() { return lowest_layer().remote_endpoint(); }
-	boost::asio::ip::tcp::endpoint remote_endpoint(boost::system::error_code &ec)
-	{
-		return lowest_layer().remote_endpoint(ec);
-	}
+      template <typename ConstBufferSequence, typename WriteHandler>
+      auto async_write_some(const ConstBufferSequence& buffers, WriteHandler&& handler) {
+         return std::visit(
+            [&, handler = std::move(handler)](auto& t) mutable {
+               if(!provider_)
+                  return t.async_write_some(buffers, std::forward<WriteHandler>(handler));
 
-	boost::asio::ip::tcp::endpoint local_endpoint() { return lowest_layer().local_endpoint(); }
-	boost::asio::ip::tcp::endpoint local_endpoint(boost::system::error_code &ec)
-	{
-		return lowest_layer().local_endpoint(ec);
-	}
+               using namespace boost::asio;
 
-	void shutdown(boost::asio::socket_base::shutdown_type what, boost::system::error_code &ec)
-	{
-		lowest_layer().shutdown(what, ec);
-	}
+               return async_initiate<WriteHandler, void(boost::system::error_code, std::size_t)>(
+                  [this, &t, buffers](auto&& completion_handler) mutable {
+                     co_spawn(
+                        t.get_executor(),
+                        [this, &t, completion_handler = std::move(completion_handler), buffers]() mutable
+                           -> awaitable<void> {
+                           try {
+                              auto plain_bytes = buffer_size(buffers);
+                              std::vector<uint8_t> plain_data(plain_bytes);
+                              buffer_copy(buffer(plain_data), buffers);
 
-	bool is_open() const { return lowest_layer().is_open(); }
+                              auto encrypted_data = provider_->encrypt(plain_data.data(), plain_data.size());
 
-	void close(boost::system::error_code &ec) { lowest_layer().close(ec); }
+                              boost::system::error_code ec;
+                              co_await boost::asio::async_write(t, buffer(encrypted_data), net_awaitable[ec]);
+                              if(ec) {
+                                 completion_handler(ec, 0);
+                                 co_return;
+                              }
+                              completion_handler(ec, plain_bytes);
+                           } catch(...) {
+                              completion_handler(make_error_code(boost::system::errc::io_error), 0);
+                           }
+                        },
+                        detached);
+                  },
+                  handler);
+            },
+            *this);
+      }
 
-	void set_provider(std::unique_ptr<crypto_provider> &&provider) { provider_ = std::move(provider); }
+      boost::asio::ip::tcp::endpoint remote_endpoint() { return lowest_layer().remote_endpoint(); }
 
-private:
-	std::unique_ptr<crypto_provider> provider_;
+      boost::asio::ip::tcp::endpoint remote_endpoint(boost::system::error_code& ec) {
+         return lowest_layer().remote_endpoint(ec);
+      }
+
+      boost::asio::ip::tcp::endpoint local_endpoint() { return lowest_layer().local_endpoint(); }
+
+      boost::asio::ip::tcp::endpoint local_endpoint(boost::system::error_code& ec) {
+         return lowest_layer().local_endpoint(ec);
+      }
+
+      void shutdown(boost::asio::socket_base::shutdown_type what, boost::system::error_code& ec) {
+         lowest_layer().shutdown(what, ec);
+      }
+
+      bool is_open() const { return lowest_layer().is_open(); }
+
+      void close(boost::system::error_code& ec) { lowest_layer().close(ec); }
+
+      void set_provider(std::unique_ptr<crypto_provider>&& provider) { provider_ = std::move(provider); }
+
+   private:
+      std::unique_ptr<crypto_provider> provider_;
 };
 
-} // namespace libvnc
+}  // namespace libvnc
