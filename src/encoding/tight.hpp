@@ -29,7 +29,7 @@ static int tight_bits_per_pixel(const proto::rfbPixelFormat &format)
 	return format.bitsPerPixel.value();
 }
 
-static boost::asio::awaitable<error> read_compact_len(vnc_stream_type &socket, long &len) noexcept
+static boost::asio::awaitable<error> read_compact_len(socket_stream &socket, long &len) noexcept
 {
 	try {
 		uint8_t b;
@@ -57,7 +57,7 @@ class filter {
 public:
 	virtual ~filter() = default;
 
-	virtual boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+	virtual boost::asio::awaitable<error> init_filter(socket_stream &socket, const proto::rfbPixelFormat &format,
 							  int &bitsPixel) = 0;
 	virtual boost::asio::awaitable<error> proc_filter(boost::asio::const_buffer decompress_data,
 							  const proto::rfbRectangle &rect, frame_buffer &frame) = 0;
@@ -65,7 +65,7 @@ public:
 
 class copy_filter : public filter {
 public:
-	boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+	boost::asio::awaitable<error> init_filter(socket_stream &socket, const proto::rfbPixelFormat &format,
 						  int &bitsPerPixel) override
 	{
 		bitsPerPixel = detail::tight_bits_per_pixel(format);
@@ -158,7 +158,7 @@ class palette_filter : public filter {
 	};
 
 public:
-	boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+	boost::asio::awaitable<error> init_filter(socket_stream &socket, const proto::rfbPixelFormat &format,
 						  int &bitsPerPixel) override
 	{
 		bitsPerPixel = detail::tight_bits_per_pixel(format);
@@ -226,7 +226,7 @@ private:
 
 class gradient_filter : public filter {
 public:
-	boost::asio::awaitable<error> init_filter(vnc_stream_type &socket, const proto::rfbPixelFormat &format,
+	boost::asio::awaitable<error> init_filter(socket_stream &socket, const proto::rfbPixelFormat &format,
 						  int &bitsPerPixel) override
 	{
 		bitsPerPixel = detail::tight_bits_per_pixel(format);
@@ -274,7 +274,7 @@ public:
 	std::string codec_name() const override { return "tight"; }
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingTight; }
 
-	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> decode(socket_stream &socket, const proto::rfbRectangle &rect,
 					     frame_buffer &buffer, std::shared_ptr<client_op> op) override
 	{
 		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
@@ -406,7 +406,7 @@ public:
 	}
 
 private:
-	boost::asio::awaitable<error> tight_fill(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> tight_fill(socket_stream &socket, const proto::rfbRectangle &rect,
 						 frame_buffer &frame)
 	{
 
@@ -434,7 +434,7 @@ private:
 		frame.fill_rect(rx, ry, rw, rh, fill_colour.data());
 		co_return error{};
 	}
-	boost::asio::awaitable<error> tight_jpeg(vnc_stream_type &socket, const proto::rfbRectangle &rect,
+	boost::asio::awaitable<error> tight_jpeg(socket_stream &socket, const proto::rfbRectangle &rect,
 						 frame_buffer &frame)
 	{
 		auto format = frame.pixel_format();

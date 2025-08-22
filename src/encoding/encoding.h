@@ -34,7 +34,7 @@ class codec {
 
       virtual bool is_frame_codec() const { return false; }
 
-      virtual boost::asio::awaitable<error> decode(vnc_stream_type& socket,
+      virtual boost::asio::awaitable<error> decode(socket_stream& socket,
                                                    const proto::rfbRectangle& rect,
                                                    frame_buffer& buffer,
                                                    std::shared_ptr<client_op> op) = 0;
@@ -44,7 +44,7 @@ class frame_codec : public codec {
    public:
       bool is_frame_codec() const final { return true; }
 
-      boost::asio::awaitable<error> decode(vnc_stream_type& socket,
+      boost::asio::awaitable<error> decode(socket_stream& socket,
                                            const proto::rfbRectangle& rect,
                                            frame_buffer& buffer,
                                            std::shared_ptr<client_op> op) override;
@@ -58,7 +58,7 @@ class codec_manager {
 
    public:
       boost::asio::awaitable<error> invoke(proto::rfbEncoding code,
-                                           vnc_stream_type& socket,
+                                           socket_stream& socket,
                                            const proto::rfbRectangle& rect,
                                            frame_buffer& frame,
                                            std::shared_ptr<client_op> op);

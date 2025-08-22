@@ -335,10 +335,10 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver() {
             boost::system::error_code ec{static_cast<int>(::ERR_get_error()), boost::asio::error::get_ssl_category()};
             co_return error::make_error(ec);
          }
-         stream_ = std::make_unique<vnc_stream_type>(std::move(stream));
+         stream_ = std::make_unique<socket_stream>(std::move(stream));
       } else {
          tcp_stream stream(strand_);
-         stream_ = std::make_unique<vnc_stream_type>(std::move(stream));
+         stream_ = std::make_unique<socket_stream>(std::move(stream));
       }
 
       co_await std::visit(

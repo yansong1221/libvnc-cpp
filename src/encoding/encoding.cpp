@@ -20,7 +20,7 @@
 
 namespace libvnc::encoding {
 
-boost::asio::awaitable<libvnc::error> frame_codec::decode(vnc_stream_type& socket,
+boost::asio::awaitable<libvnc::error> frame_codec::decode(socket_stream& socket,
                                                           const proto::rfbRectangle& rect,
                                                           frame_buffer& buffer,
                                                           std::shared_ptr<client_op> op) {
@@ -90,7 +90,7 @@ std::vector<std::string> codec_manager::supported_frame_encodings() const {
 }
 
 boost::asio::awaitable<error> codec_manager::invoke(proto::rfbEncoding code,
-                                                    vnc_stream_type& socket,
+                                                    socket_stream& socket,
                                                     const proto::rfbRectangle& rect,
                                                     frame_buffer& frame,
                                                     std::shared_ptr<client_op> op) {

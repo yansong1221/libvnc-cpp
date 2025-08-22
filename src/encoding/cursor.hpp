@@ -9,7 +9,7 @@ class cursor : public codec {
    public:
       void init() override {}
 
-      boost::asio::awaitable<error> decode(vnc_stream_type& socket,
+      boost::asio::awaitable<error> decode(socket_stream& socket,
                                            const proto::rfbRectangle& rect,
                                            frame_buffer& buffer,
                                            std::shared_ptr<client_op> op) override {
@@ -57,7 +57,7 @@ class cursor : public codec {
 
    protected:
       virtual boost::asio::awaitable<error> read_rc_source(
-         vnc_stream_type& socket, int width, int height, std::size_t bytesMaskData, std::size_t bytesPerRow) = 0;
+         socket_stream& socket, int width, int height, std::size_t bytesMaskData, std::size_t bytesPerRow) = 0;
 
    protected:
       frame_buffer rcSource_;
@@ -71,7 +71,7 @@ class x_cursor : public cursor {
       proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingXCursor; }
 
       boost::asio::awaitable<error> read_rc_source(
-         vnc_stream_type& socket, int width, int height, std::size_t bytesMaskData, std::size_t bytesPerRow) override {
+         socket_stream& socket, int width, int height, std::size_t bytesMaskData, std::size_t bytesPerRow) override {
          boost::system::error_code ec;
          /* Read and convert background and foreground colors. */
          uint32_t colors[2] = {0};
@@ -140,7 +140,7 @@ class rich_cursor : public cursor {
       proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRichCursor; }
 
       boost::asio::awaitable<error> read_rc_source(
-         vnc_stream_type& socket, int width, int height, std::size_t bytesMaskData, std::size_t bytesPerRow) override {
+         socket_stream& socket, int width, int height, std::size_t bytesMaskData, std::size_t bytesPerRow) override {
          boost::system::error_code ec;
          co_await boost::asio::async_read(
             socket, boost::asio::buffer(rcSource_.data(), rcSource_.size()), net_awaitable[ec]);

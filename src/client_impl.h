@@ -136,7 +136,7 @@ class client_impl : public encoding::client_op {
    public:
       boost::asio::strand<boost::asio::any_io_executor> strand_;
       boost::asio::ip::tcp::resolver resolver_;
-      vnc_stream_ptr stream_;
+      socket_stream_ptr stream_;
       std::deque<std::vector<uint8_t>> send_que_;
 
       std::string host_ = "127.0.0.1";
