@@ -5,6 +5,9 @@
 #include "stream/stream.hpp"
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/serialization/singleton.hpp>
+#include <functional>
+#include <map>
 #include <spdlog/spdlog.h>
 
 namespace libvnc::encoding {
@@ -58,6 +61,39 @@ class frame_codec : public codec {
          op->soft_cursor_lock_area(rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
          co_return error{};
       }
+};
+
+class encoding_manager {
+   public:
+      using codec_ptr = std::unique_ptr<codec>;
+
+      encoding_manager();
+
+   public:
+      boost::asio::awaitable<error> invoke(proto::rfbEncoding code,
+                                           vnc_stream_type& socket,
+                                           const proto::rfbRectangle& rect,
+                                           frame_buffer& frame,
+                                           std::shared_ptr<frame_op> op);
+
+   public:
+      void init();
+      void register_codec(codec_ptr&& ptr);
+      bool has_codec(proto::rfbEncoding code) const;
+      std::vector<proto::rfbEncoding> registered_encodings() const;
+      std::vector<std::string> supported_frame_encodings() const;
+
+      std::vector<proto::rfbEncoding> get_apply_encodings(const std::vector<std::string>& frame_encodings) const;
+
+      template <typename T, typename... _Types>
+         requires std::derived_from<T, encoding::codec>
+      void register_encoding(_Types&&... _Args) {
+         auto codec = std::make_unique<T>(std::forward<_Types>(_Args)...);
+         codecs_.push_back(std::move(codec));
+      }
+
+   private:
+      std::vector<codec_ptr> codecs_;
 };
 
 }  // namespace libvnc::encoding

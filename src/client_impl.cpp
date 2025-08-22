@@ -1,23 +1,6 @@
 #include "client_impl.h"
 
 #include "d3des.hpp"
-#include "dh.h"
-#include "encoding/copy_rect.hpp"
-#include "encoding/cursor.hpp"
-#include "encoding/ext_desktop_size.hpp"
-#include "encoding/hextile.hpp"
-#include "encoding/keyboard_led_state.hpp"
-#include "encoding/new_fb_size.hpp"
-#include "encoding/pointer_pos.hpp"
-#include "encoding/raw.hpp"
-#include "encoding/rre.hpp"
-#include "encoding/server_identity.hpp"
-#include "encoding/supported_encodings.hpp"
-#include "encoding/supported_messages.hpp"
-#include "encoding/tight.hpp"
-#include "encoding/ultra.hpp"
-#include "encoding/zlib.hpp"
-#include "encoding/zrle.hpp"
 #include "libvnc-cpp/client.h"
 #include "libvnc-cpp/error.h"
 #include "libvnc-cpp/proto.h"
@@ -42,6 +25,7 @@
 #include <boost/asio/write.hpp>
 #include <filesystem>
 #include <iostream>
+#include <random>
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <string.h>
@@ -51,6 +35,24 @@
 #endif
 
 namespace libvnc {
+
+namespace detail {
+//Raises X to the power Y in modulus N
+//the values of X, Y, and N can be massive, and this can be
+//achieved by first calculating X to the power of 2 then
+//using power chaining over modulus N
+static std::uint64_t XpowYmodN(std::uint64_t x, std::uint64_t y, std::uint64_t N) {
+   std::uint64_t result = 1;
+   const std::uint64_t oneShift63 = ((std::uint64_t)1) << 63;
+
+   for(int i = 0; i < 64; y <<= 1, i++) {
+      result = result * result % N;
+      if(y & oneShift63)
+         result = result * x % N;
+   }
+   return result;
+}
+}  // namespace detail
 
 client_impl::client_impl(const boost::asio::any_io_executor& executor) : strand_(executor), resolver_(executor) {
    register_message(proto::rfbFramebufferUpdate, &client_impl::on_rfbFramebufferUpdate, this);
@@ -73,27 +75,6 @@ client_impl::client_impl(const boost::asio::any_io_executor& executor) : strand_
    register_auth_message(proto::rfbRSAAESne_256, &client_impl::on_rfbRSAAESne_256, this);
    register_auth_message(proto::rfbRSAAES, &client_impl::on_rfbRSAAES, this);
    register_auth_message(proto::rfbRSAAESne, &client_impl::on_rfbRSAAESne, this);
-
-   register_encoding<encoding::tight>();
-   register_encoding<encoding::ultra>();
-   register_encoding<encoding::ultra_zip>();
-   register_encoding<encoding::copy_rect>();
-   register_encoding<encoding::zrle>();
-   register_encoding<encoding::zlib>();
-   register_encoding<encoding::co_rre>();
-   register_encoding<encoding::rre>();
-   register_encoding<encoding::hextile>();
-   register_encoding<encoding::raw>();
-
-   register_encoding<encoding::x_cursor>();
-   register_encoding<encoding::rich_cursor>();
-   register_encoding<encoding::keyboard_led_state>();
-   register_encoding<encoding::new_fb_size>();
-   register_encoding<encoding::pointer_pos>();
-   register_encoding<encoding::server_identity>();
-   register_encoding<encoding::supported_encodings>();
-   register_encoding<encoding::ext_desktop_size>();
-   register_encoding<encoding::supported_messages>();
 }
 
 const libvnc::frame_buffer& client_impl::frame() const {
@@ -171,8 +152,7 @@ boost::asio::awaitable<libvnc::error> client_impl::co_run() {
    commit_status(client::status::connected);
    handler_.on_connect(error{});
 
-   for(const auto& codec : codecs_)
-      codec->init();
+   codecs_.init();
 
    send_framebuffer_update_request(false);
 
@@ -208,13 +188,7 @@ void client_impl::send_framebuffer_update_request(bool incremental) {
 }
 
 std::vector<std::string> client_impl::supported_frame_encodings() const {
-   std::vector<std::string> encs;
-   for(const auto& item : codecs_) {
-      if(!item->is_frame_codec())
-         continue;
-      encs.push_back(item->codec_name());
-   }
-   return encs;
+   return codecs_.supported_frame_encodings();
 }
 
 bool client_impl::send_pointer_event(int x, int y, int buttonMask) {
@@ -607,18 +581,8 @@ bool client_impl::send_format(const proto::rfbPixelFormat& format) {
 
 bool client_impl::send_frame_encodings(const std::vector<std::string>& encodings) {
    std::vector<boost::endian::big_uint32_buf_t> encs;
-
-   auto apply_codecs = codecs_ | std::views::filter([&](const auto& enc) {
-                          if(!enc->is_frame_codec())
-                             return true;
-
-                          auto iter = std::ranges::find_if(
-                             encodings, [&](const auto& enc_name) { return enc->codec_name() == enc_name; });
-                          return iter != encodings.end();
-                       });
-
-   for(const auto& codec : apply_codecs)
-      encs.emplace_back(codec->encoding_code());
+   for(const auto& codec : codecs_.get_apply_encodings(encodings))
+      encs.emplace_back(codec);
 
    encs.emplace_back(compress_level_ + proto::rfbEncodingCompressLevel0);
    encs.emplace_back(quality_level_ + proto::rfbEncodingQualityLevel0);
@@ -840,8 +804,29 @@ proto::rfbAuthScheme client_impl::select_auth_scheme(const std::set<proto::rfbAu
    if(auths.count(proto::rfbClientInitExtraMsgSupport))
       return proto::rfbClientInitExtraMsgSupport;
 
-   if(auto result = handler_.select_auth_scheme(auths); result)
-      return result.value();
+   std::set<client_delegate::auth_mothed> auth_motheds;
+   if(auths.count(proto::rfbNoAuth))
+      auth_motheds.insert(client_delegate::auth_mothed::none);
+   if(auths.count(proto::rfbVncAuth))
+      auth_motheds.insert(client_delegate::auth_mothed::vnc_password);
+   if(auths.count(proto::rfbUltraMSLogonII))
+      auth_motheds.insert(client_delegate::auth_mothed::ms_account);
+
+   if(auto result = handler_.query_auth_scheme(auth_motheds); result) {
+      switch(result.value()) {
+         case client_delegate::auth_mothed::none:
+            return proto::rfbNoAuth;
+            break;
+         case client_delegate::auth_mothed::vnc_password:
+            return proto::rfbVncAuth;
+            break;
+         case client_delegate::auth_mothed::ms_account:
+            return proto::rfbUltraMSLogonII;
+            break;
+         default:
+            break;
+      }
+   }
 
    return proto::rfbConnFailed;
 }
@@ -923,6 +908,10 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraVNC() {
    co_return co_await read_auth_result();
 }
 
+unsigned __int64 rng(unsigned __int64 limit) {
+   return ((((unsigned __int64)rand()) * rand() * rand()) % limit);
+}
+
 boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraMSLogonII() {
    try {
       boost::endian::big_int64_buf_t gen;
@@ -933,14 +922,20 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraMSLogonII() {
       co_await boost::asio::async_read(*stream_, boost::asio::buffer(&mod, sizeof(mod)));
       co_await boost::asio::async_read(*stream_, boost::asio::buffer(&resp, sizeof(resp)));
 
-      boost::endian::big_int64_buf_t pub;
-      DH_EX dh(gen.value(), mod.value());
-      pub = dh.createInterKey();
+      auto random_u64 = []() {
+         static std::random_device rd;
+         static std::mt19937_64 gen(rd());
+         static std::uniform_int_distribution<std::uint64_t> dist(1, std::numeric_limits<uint32_t>::max());
+         return dist(gen);
+      };
 
+      std::uint64_t priv = random_u64();
+      boost::endian::big_int64_buf_t pub;
+      pub = detail::XpowYmodN(gen.value(), priv, mod.value());
       co_await boost::asio::async_write(*stream_, boost::asio::buffer(&pub, sizeof(pub)));
 
       boost::endian::big_int64_buf_t key;
-      key = dh.createEncryptionKey(resp.value());
+      key = detail::XpowYmodN(resp.value(), priv, mod.value());
 
       spdlog::info("After DH: g={}, m={}, i={}, key={}", gen.value(), mod.value(), pub.value(), key.value());
 
@@ -1202,13 +1197,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate() {
       if(encoding == proto::rfbEncodingLastRect)
          break;
 
-      auto iter = std::ranges::find_if(codecs_, [&](const auto& codec) { return codec->encoding_code() == encoding; });
-      if(iter == codecs_.end()) {
-         co_return error::make_error(custom_error::frame_error, fmt::format("Unsupported encoding: {}", (int)encoding));
-      }
-      const auto& codec = (*iter);
-
-      auto err = co_await codec->decode(*stream_, UpdateRect.r, frame_, shared_from_this());
+      auto err = co_await codecs_.invoke(encoding, *stream_, UpdateRect.r, frame_, shared_from_this());
       if(err)
          co_return err;
    }

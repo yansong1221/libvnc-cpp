@@ -164,20 +164,14 @@ void client_delegate::on_status_changed(const client::status& s) {}
 
 void client_delegate::on_monitor_info(int count) {}
 
-libvnc::proto::rfbAuthScheme client_delegate::select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths) {
-   if(auths.empty())
-      return proto::rfbConnFailed;
+client_delegate::auth_mothed client_delegate::query_auth_scheme(const std::set<client_delegate::auth_mothed>& auths) {
+   if(auths.count(client_delegate::auth_mothed::ms_account))
+      return client_delegate::auth_mothed::ms_account;
 
-   if(auths.count(proto::rfbNoAuth))
-      return proto::rfbNoAuth;
+   if(auths.count(client_delegate::auth_mothed::vnc_password))
+      return client_delegate::auth_mothed::vnc_password;
 
-   if(auths.count(proto::rfbUltraMSLogonII))
-      return proto::rfbUltraMSLogonII;
-
-   if(auths.count(proto::rfbVncAuth))
-      return proto::rfbVncAuth;
-
-   return *auths.begin();
+   return client_delegate::auth_mothed::none;
 }
 
 void client_delegate::on_keyboard_led_state(int state) {}

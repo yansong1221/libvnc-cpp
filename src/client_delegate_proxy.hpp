@@ -14,8 +14,8 @@ class client_delegate_proxy {
 
       auto on_disconnect(const error& ec) { return invoke(&client_delegate::on_disconnect, ec); }
 
-      auto select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths) {
-         return invoke(&client_delegate::select_auth_scheme, auths);
+      auto query_auth_scheme(const std::set<client_delegate::auth_mothed>& auths) {
+         return invoke(&client_delegate::query_auth_scheme, auths);
       }
 
       auto get_auth_password() { return invoke(&client_delegate::get_auth_password); }

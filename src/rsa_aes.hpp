@@ -20,10 +20,10 @@ class aes_crypto_provider : public crypto_provider {
    public:
       aes_crypto_provider(int keySize, const Botan::SymmetricKey& enc_key, const Botan::SymmetricKey& dec_key) {
          if(keySize == 128) {
-            dec_ = Botan::AEAD_Mode::create_or_throw("AES-128/EAX", Botan::Cipher_Dir::DECRYPTION);
+            dec_ = Botan::AEAD_Mode::create_or_throw("AES-128/EAX", Botan::Cipher_Dir::Decryption);
             enc_ = Botan::AEAD_Mode::create_or_throw("AES-128/EAX", Botan::Cipher_Dir::Encryption);
          } else {
-            dec_ = Botan::AEAD_Mode::create_or_throw("AES-256/EAX", Botan::Cipher_Dir::DECRYPTION);
+            dec_ = Botan::AEAD_Mode::create_or_throw("AES-256/EAX", Botan::Cipher_Dir::Decryption);
             enc_ = Botan::AEAD_Mode::create_or_throw("AES-256/EAX", Botan::Cipher_Dir::Encryption);
          }
          dec_->set_key(dec_key);
@@ -38,7 +38,7 @@ class aes_crypto_provider : public crypto_provider {
          boost::endian::big_uint16_buf_t data_len;
 
          while(!plain.empty()) {
-            data_len = std::min<uint16_t>(uint16_max, plain.size());
+            data_len = std::min<std::size_t>(uint16_max, plain.size());
 
             std::vector<uint8_t> buf(sizeof(uint16_t) + data_len.value());
             std::memcpy(buf.data(), &data_len, sizeof(data_len));

@@ -66,6 +66,12 @@ class client {
 
 class client_delegate {
    public:
+      enum class auth_mothed {
+         none,
+         vnc_password,
+         ms_account,
+      };
+
       virtual ~client_delegate() = default;
       virtual void on_connect(const error& ec) = 0;
       virtual void on_disconnect(const error& ec) = 0;
@@ -84,6 +90,6 @@ class client_delegate {
       virtual std::string get_auth_password();
       virtual std::pair<std::string, std::string> get_auth_ms_account();
       virtual proto::rfbPixelFormat want_format();
-      virtual proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths);
+      virtual auth_mothed query_auth_scheme(const std::set<auth_mothed>& auths);
 };
 }  // namespace libvnc

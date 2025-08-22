@@ -123,13 +123,6 @@ class client_impl : public encoding::frame_op {
       boost::asio::awaitable<error> on_rfbKeepAlive();
 
    private:
-      template <typename T, typename... _Types>
-         requires std::derived_from<T, encoding::codec>
-      void register_encoding(_Types&&... _Args) {
-         auto codec = std::make_unique<T>(std::forward<_Types>(_Args)...);
-         codecs_.push_back(std::move(codec));
-      }
-
       template <class _Fx, class... _Types>
       void register_message(uint8_t ID, _Fx&& _Func, _Types&&... _Args) {
          message_map_.emplace(ID, std::bind(std::forward<_Fx>(_Func), std::forward<_Types>(_Args)...));
@@ -164,7 +157,7 @@ class client_impl : public encoding::frame_op {
       client_delegate_proxy handler_;
       supported_messages supported_messages_;
 
-      std::vector<std::unique_ptr<encoding::codec>> codecs_;
+      encoding::encoding_manager codecs_;
       using message_handler = std::function<boost::asio::awaitable<error>()>;
       std::map<uint8_t, message_handler> message_map_;
       std::map<uint8_t, message_handler> auth_message_map_;
