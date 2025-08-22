@@ -20,7 +20,7 @@ protected:
     void on_cursor_shape(int xhot,
                          int yhot,
                          const libvnc::frame_buffer& rc_source,
-                         const uint8_t* rc_mask) override;
+                         std::span<const uint8_t> rc_mask) override;
     void paintEvent(QPaintEvent*) override;
 
 private:

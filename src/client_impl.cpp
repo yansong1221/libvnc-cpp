@@ -21,7 +21,7 @@
 #include "libvnc-cpp/client.h"
 #include "libvnc-cpp/error.h"
 #include "libvnc-cpp/proto.h"
-//#include "rsa_aes.hpp"
+#include "rsa_aes.hpp"
 #include "stream/stream.hpp"
 #include "use_awaitable.hpp"
 #include <botan/aead.h>
@@ -40,13 +40,6 @@
 #include <boost/asio/experimental/awaitable_operators.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/write.hpp>
-//#include <cryptopp/aes.h>
-//#include <cryptopp/base64.h>
-//#include <cryptopp/files.h>
-//#include <cryptopp/filters.h>
-//#include <cryptopp/modes.h>
-//#include <cryptopp/osrng.h>
-//#include <cryptopp/rsa.h>
 #include <filesystem>
 #include <iostream>
 #include <ranges>
@@ -56,7 +49,6 @@
 #if defined(LIBVNC_HAVE_LIBZ)
    #include <zstr.hpp>
 #endif
-#include "rsa_aes.hpp"
 
 namespace libvnc {
 
@@ -901,7 +893,10 @@ proto::rfbAuthScheme client_impl::select_auth_scheme(const std::set<proto::rfbAu
 
 void client_impl::soft_cursor_lock_area(int x, int y, int w, int h) {}
 
-void client_impl::got_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask) {
+void client_impl::got_cursor_shape(int xhot,
+                                   int yhot,
+                                   const frame_buffer& rc_source,
+                                   std::span<const uint8_t> rc_mask) {
    handler_.on_cursor_shape(xhot, yhot, rc_source, rc_mask);
 }
 

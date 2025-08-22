@@ -5,83 +5,85 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <memory>
 #include <set>
+#include <span>
 
 namespace libvnc {
 
 class client_delegate;
 class client_impl;
+
 class client {
-public:
-	client(boost::asio::io_context &executor, client_delegate *handler);
-	virtual ~client();
+   public:
+      client(boost::asio::io_context& executor, client_delegate* handler);
+      virtual ~client();
 
-	enum class status : uint32_t { closed = 0, connecting, handshaking, authenticating, initializing, connected };
+      enum class status : uint32_t { closed = 0, connecting, handshaking, authenticating, initializing, connected };
 
-public:
-	void start();
-	void stop();
+   public:
+      void start();
+      void stop();
 
-	void set_host(std::string_view host);
-	void set_port(int port);
-	void set_share_desktop(bool share);
-	void set_compress_level(int level);
-	void set_quality_level(int level);
-	void set_notifiction_text(std::string_view text);
+      void set_host(std::string_view host);
+      void set_port(int port);
+      void set_share_desktop(bool share);
+      void set_compress_level(int level);
+      void set_quality_level(int level);
+      void set_notifiction_text(std::string_view text);
 
-	const frame_buffer &frame() const;
-	status current_status() const;
-	int current_keyboard_led_state() const;
+      const frame_buffer& frame() const;
+      status current_status() const;
+      int current_keyboard_led_state() const;
 
-	bool send_frame_encodings(const std::vector<std::string> &encodings);
-	bool send_scale_setting(int scale);
-	bool send_ext_desktop_size(const std::vector<proto::rfbExtDesktopScreen> &screens);
+      bool send_frame_encodings(const std::vector<std::string>& encodings);
+      bool send_scale_setting(int scale);
+      bool send_ext_desktop_size(const std::vector<proto::rfbExtDesktopScreen>& screens);
 
-	bool send_pointer_event(int x, int y, int buttonMask);
-	bool send_key_event(uint32_t key, bool down);
-	bool send_extended_key_event(uint32_t keysym, uint32_t keycode, bool down);
-	bool send_client_cut_text(std::string_view text);
-	bool send_client_cut_text_utf8(std::string_view text);
+      bool send_pointer_event(int x, int y, int buttonMask);
+      bool send_key_event(uint32_t key, bool down);
+      bool send_extended_key_event(uint32_t keysym, uint32_t keycode, bool down);
+      bool send_client_cut_text(std::string_view text);
+      bool send_client_cut_text_utf8(std::string_view text);
 
-	bool text_chat_send(std::string_view text);
-	bool text_chat_open();
-	bool text_chat_close();
-	bool text_chat_finish();
+      bool text_chat_send(std::string_view text);
+      bool text_chat_open();
+      bool text_chat_close();
+      bool text_chat_finish();
 
-	bool permit_server_input(bool enabled);
+      bool permit_server_input(bool enabled);
 
-	bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
+      bool send_xvp_msg(uint8_t version, proto::rfbXvpCode code);
 
-	bool send_set_monitor(uint8_t nbr);
-	int monitors() const;
+      bool send_set_monitor(uint8_t nbr);
+      int monitors() const;
 
-private:
-	client(const client &) = delete;
-	client &operator=(const client &) = delete;
+   private:
+      client(const client&) = delete;
+      client& operator=(const client&) = delete;
 
-	friend class client_impl;
-	std::shared_ptr<client_impl> impl_;
+      friend class client_impl;
+      std::shared_ptr<client_impl> impl_;
 };
 
 class client_delegate {
-public:
-	virtual ~client_delegate() = default;
-	virtual void on_connect(const error &ec) = 0;
-	virtual void on_disconnect(const error &ec) = 0;
-	virtual void on_new_frame_size(int w, int h) = 0;
-	virtual void on_frame_update(const frame_buffer &) = 0;
-	virtual void on_keyboard_led_state(int state);
-	virtual void on_text_chat(const proto::rfbTextChatType &type, std::string_view message);
-	virtual void on_cut_text_utf8(std::string_view message);
-	virtual void on_cut_text(std::string_view message);
-	virtual void on_bell();
-	virtual void on_cursor_shape(int xhot, int yhot, const frame_buffer &rc_source, const uint8_t *rc_mask);
-	virtual void on_cursor_pos(int x, int y);
-	virtual void on_status_changed(const client::status &s);
-	virtual void on_monitor_info(int monitors);
+   public:
+      virtual ~client_delegate() = default;
+      virtual void on_connect(const error& ec) = 0;
+      virtual void on_disconnect(const error& ec) = 0;
+      virtual void on_new_frame_size(int w, int h) = 0;
+      virtual void on_frame_update(const frame_buffer&) = 0;
+      virtual void on_keyboard_led_state(int state);
+      virtual void on_text_chat(const proto::rfbTextChatType& type, std::string_view message);
+      virtual void on_cut_text_utf8(std::string_view message);
+      virtual void on_cut_text(std::string_view message);
+      virtual void on_bell();
+      virtual void on_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, std::span<const uint8_t> rc_mask);
+      virtual void on_cursor_pos(int x, int y);
+      virtual void on_status_changed(const client::status& s);
+      virtual void on_monitor_info(int monitors);
 
-	virtual std::string get_auth_password();
-	virtual std::pair<std::string, std::string> get_auth_ms_account();
-	virtual proto::rfbPixelFormat want_format();
-	virtual proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme> &auths);
+      virtual std::string get_auth_password();
+      virtual std::pair<std::string, std::string> get_auth_ms_account();
+      virtual proto::rfbPixelFormat want_format();
+      virtual proto::rfbAuthScheme select_auth_scheme(const std::set<proto::rfbAuthScheme>& auths);
 };
-} // namespace libvnc
+}  // namespace libvnc

@@ -86,7 +86,10 @@ class client_impl : public encoding::frame_op {
 
    protected:
       void soft_cursor_lock_area(int x, int y, int w, int h) override;
-      void got_cursor_shape(int xhot, int yhot, const frame_buffer& rc_source, const uint8_t* rc_mask) override;
+      void got_cursor_shape(int xhot,
+                            int yhot,
+                            const frame_buffer& rc_source,
+                            std::span<const uint8_t> rc_mask) override;
       void handle_cursor_pos(int x, int y) override;
       void handle_keyboard_led_state(int state) override;
       void handle_server_identity(std::string_view text) override;
