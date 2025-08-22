@@ -14,7 +14,7 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingSupportedMessages; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
+					     frame_buffer &buffer, std::shared_ptr<client_op> op) override
 	{
 		boost::system::error_code ec;
 		proto::rfbSupportedMessages supportedMessages = {0};

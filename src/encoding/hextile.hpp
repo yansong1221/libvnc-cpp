@@ -60,7 +60,7 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingHextile; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
+					     frame_buffer &buffer, std::shared_ptr<client_op> op) override
 	{
 		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
 			co_return err;
@@ -87,7 +87,7 @@ public:
 
 private:
 	boost::asio::awaitable<error> handle_hextile(vnc_stream_type &socket, frame_buffer &frame,
-						     std::shared_ptr<frame_op> op, int x, int y, int w, int h)
+						     std::shared_ptr<client_op> op, int x, int y, int w, int h)
 	{
 		boost::system::error_code ec;
 		uint8_t subencoding{};

@@ -13,7 +13,7 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingRRE; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
+					     frame_buffer &buffer, std::shared_ptr<client_op> op) override
 	{
 		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
 			co_return err;
@@ -71,7 +71,7 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingCoRRE; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
+					     frame_buffer &buffer, std::shared_ptr<client_op> op) override
 	{
 		if (auto err = co_await frame_codec::decode(socket, rect, buffer, op); err)
 			co_return err;

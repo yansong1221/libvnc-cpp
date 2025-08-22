@@ -11,7 +11,7 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingNewFBSize; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
+					     frame_buffer &buffer, std::shared_ptr<client_op> op) override
 	{
 		op->handle_resize_client_buffer(rect.w.value(), rect.h.value());
 		co_return error{};

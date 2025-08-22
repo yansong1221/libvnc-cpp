@@ -11,7 +11,7 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncoding::rfbEncodingPointerPos; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &buffer, std::shared_ptr<frame_op> op) override
+					     frame_buffer &buffer, std::shared_ptr<client_op> op) override
 	{
 		op->handle_cursor_pos(rect.x.value(), rect.y.value());
 		co_return error{};

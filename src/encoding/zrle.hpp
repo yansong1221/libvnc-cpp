@@ -124,7 +124,7 @@ public:
 	proto::rfbEncoding encoding_code() const override { return proto::rfbEncodingZRLE; }
 
 	boost::asio::awaitable<error> decode(vnc_stream_type &socket, const proto::rfbRectangle &rect,
-					     frame_buffer &frame, std::shared_ptr<frame_op> op) noexcept override
+					     frame_buffer &frame, std::shared_ptr<client_op> op) noexcept override
 	{
 		if (auto err = co_await frame_codec::decode(socket, rect, frame, op); err)
 			co_return err;

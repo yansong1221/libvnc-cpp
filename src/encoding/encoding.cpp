@@ -19,7 +19,22 @@
 #include <spdlog/spdlog.h>
 
 namespace libvnc::encoding {
-encoding_manager::encoding_manager() {
+
+boost::asio::awaitable<libvnc::error> frame_codec::decode(vnc_stream_type& socket,
+                                                          const proto::rfbRectangle& rect,
+                                                          frame_buffer& buffer,
+                                                          std::shared_ptr<client_op> op) {
+   if(!buffer.check_rect(rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value())) {
+      auto msg = fmt::format(
+         "Rect too large: {}x{} at ({}, {})", rect.w.value(), rect.h.value(), rect.x.value(), rect.y.value());
+      spdlog::error(msg);
+      co_return error::make_error(custom_error::frame_error, msg);
+   }
+   op->soft_cursor_lock_area(rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
+   co_return error{};
+}
+
+codec_manager::codec_manager() {
    register_encoding<tight>();
    register_encoding<ultra>();
    register_encoding<ultra_zip>();
@@ -42,16 +57,16 @@ encoding_manager::encoding_manager() {
    register_encoding<supported_messages>();
 }
 
-void encoding_manager::register_codec(codec_ptr&& ptr) {
+void codec_manager::register_codec(codec_ptr&& ptr) {
    codecs_.push_back(std::move(ptr));
 }
 
-bool encoding_manager::has_codec(proto::rfbEncoding code) const {
+bool codec_manager::has_codec(proto::rfbEncoding code) const {
    auto iter = std::ranges::find_if(codecs_, [&](const auto& ptr) { return ptr->encoding_code() == code; });
    return iter != codecs_.end();
 }
 
-std::vector<proto::rfbEncoding> encoding_manager::registered_encodings() const {
+std::vector<proto::rfbEncoding> codec_manager::registered_encodings() const {
    std::vector<proto::rfbEncoding> result;
    for(const auto& code : codecs_)
       result.push_back(code->encoding_code());
@@ -59,12 +74,12 @@ std::vector<proto::rfbEncoding> encoding_manager::registered_encodings() const {
    return result;
 }
 
-void encoding_manager::init() {
+void codec_manager::init() {
    for(const auto& codec : codecs_)
       codec->init();
 }
 
-std::vector<std::string> encoding_manager::supported_frame_encodings() const {
+std::vector<std::string> codec_manager::supported_frame_encodings() const {
    std::vector<std::string> encs;
    for(const auto& item : codecs_) {
       if(!item->is_frame_codec())
@@ -74,11 +89,11 @@ std::vector<std::string> encoding_manager::supported_frame_encodings() const {
    return encs;
 }
 
-boost::asio::awaitable<libvnc::error> encoding_manager::invoke(proto::rfbEncoding code,
+boost::asio::awaitable<libvnc::error> codec_manager::invoke(proto::rfbEncoding code,
                                                                vnc_stream_type& socket,
                                                                const proto::rfbRectangle& rect,
                                                                frame_buffer& frame,
-                                                               std::shared_ptr<frame_op> op) {
+                                                               std::shared_ptr<client_op> op) {
    auto iter = std::ranges::find_if(codecs_, [&](const auto& codec) { return codec->encoding_code() == code; });
    if(iter == codecs_.end()) {
       co_return error::make_error(custom_error::frame_error, fmt::format("Unsupported encoding: {}", (int)code));
@@ -88,7 +103,7 @@ boost::asio::awaitable<libvnc::error> encoding_manager::invoke(proto::rfbEncodin
    co_return co_await codec->decode(socket, rect, frame, op);
 }
 
-std::vector<proto::rfbEncoding> encoding_manager::get_apply_encodings(
+std::vector<proto::rfbEncoding> codec_manager::get_apply_encodings(
    const std::vector<std::string>& frame_encodings) const {
    auto apply_codecs =
       codecs_ | std::views::filter([&](const auto& enc) {

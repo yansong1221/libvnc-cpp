@@ -5,16 +5,12 @@
 #include "stream/stream.hpp"
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/ip/tcp.hpp>
-#include <boost/serialization/singleton.hpp>
-#include <functional>
-#include <map>
-#include <spdlog/spdlog.h>
 
 namespace libvnc::encoding {
 
-class frame_op : public std::enable_shared_from_this<frame_op> {
+class client_op : public std::enable_shared_from_this<client_op> {
    public:
-      virtual ~frame_op() = default;
+      virtual ~client_op() = default;
       virtual void soft_cursor_lock_area(int x, int y, int w, int h) = 0;
       virtual void got_cursor_shape(int xhot,
                                     int yhot,
@@ -41,7 +37,7 @@ class codec {
       virtual boost::asio::awaitable<error> decode(vnc_stream_type& socket,
                                                    const proto::rfbRectangle& rect,
                                                    frame_buffer& buffer,
-                                                   std::shared_ptr<frame_op> op) = 0;
+                                                   std::shared_ptr<client_op> op) = 0;
 };
 
 class frame_codec : public codec {
@@ -51,30 +47,21 @@ class frame_codec : public codec {
       boost::asio::awaitable<error> decode(vnc_stream_type& socket,
                                            const proto::rfbRectangle& rect,
                                            frame_buffer& buffer,
-                                           std::shared_ptr<frame_op> op) override {
-         if(!buffer.check_rect(rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value())) {
-            auto msg = fmt::format(
-               "Rect too large: {}x{} at ({}, {})", rect.w.value(), rect.h.value(), rect.x.value(), rect.y.value());
-            spdlog::error(msg);
-            co_return error::make_error(custom_error::frame_error, msg);
-         }
-         op->soft_cursor_lock_area(rect.x.value(), rect.y.value(), rect.w.value(), rect.h.value());
-         co_return error{};
-      }
+                                           std::shared_ptr<client_op> op) override;
 };
 
-class encoding_manager {
+class codec_manager {
    public:
       using codec_ptr = std::unique_ptr<codec>;
 
-      encoding_manager();
+      codec_manager();
 
    public:
       boost::asio::awaitable<error> invoke(proto::rfbEncoding code,
                                            vnc_stream_type& socket,
                                            const proto::rfbRectangle& rect,
                                            frame_buffer& frame,
-                                           std::shared_ptr<frame_op> op);
+                                           std::shared_ptr<client_op> op);
 
    public:
       void init();
@@ -85,6 +72,7 @@ class encoding_manager {
 
       std::vector<proto::rfbEncoding> get_apply_encodings(const std::vector<std::string>& frame_encodings) const;
 
+   private:
       template <typename T, typename... _Types>
          requires std::derived_from<T, encoding::codec>
       void register_encoding(_Types&&... _Args) {
