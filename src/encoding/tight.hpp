@@ -427,8 +427,6 @@ private:
 						 net_awaitable[ec]);
 		if (ec)
 			co_return error::make_error(ec);
-		//if (!format.bigEndian.value())
-		//std::reverse(fill_colour.begin(), fill_colour.end());
 
 		if (detail::is_argb32_with_tight_rgb24(format))
 			helper::rgb24_to_pixel<uint32_t>(format, fill_colour);
@@ -482,9 +480,6 @@ private:
 			pixelSize = bytes_pixel;
 			pitch = frame.width() * pixelSize;
 			dst = frame.data() + (ry * pitch + rx * pixelSize);
-
-			//decompress_buffer_.resize(pitch * rh);
-			//dst = decompress_buffer_.data();
 		}
 
 		if (tjDecompress(jpeg_handle_.get(), (uint8_t *)buffer_.data().data(), (unsigned long)compressedLen,
