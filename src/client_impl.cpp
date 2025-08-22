@@ -152,7 +152,7 @@ boost::asio::awaitable<libvnc::error> client_impl::co_run() {
    commit_status(client::status::connected);
    handler_.on_connect(error{});
 
-   codecs_.init();
+   codec_manager_.init();
 
    send_framebuffer_update_request(false);
 
@@ -188,7 +188,7 @@ void client_impl::send_framebuffer_update_request(bool incremental) {
 }
 
 std::vector<std::string> client_impl::supported_frame_encodings() const {
-   return codecs_.supported_frame_encodings();
+   return codec_manager_.supported_frame_encodings();
 }
 
 bool client_impl::send_pointer_event(int x, int y, int buttonMask) {
@@ -581,17 +581,8 @@ bool client_impl::send_format(const proto::rfbPixelFormat& format) {
 
 bool client_impl::send_frame_encodings(const std::vector<std::string>& encodings) {
    std::vector<boost::endian::big_uint32_buf_t> encs;
-   for(const auto& codec : codecs_.get_apply_encodings(encodings))
+   for(const auto& codec : codec_manager_.get_apply_encodings(encodings))
       encs.emplace_back(codec);
-
-   encs.emplace_back(compress_level_ + proto::rfbEncodingCompressLevel0);
-   encs.emplace_back(quality_level_ + proto::rfbEncodingQualityLevel0);
-   encs.emplace_back(proto::rfbEncodingLastRect);
-#ifdef LIBVNC_HAVE_LIBZ
-   encs.emplace_back(proto::rfbEncodingExtendedClipboard);
-#endif
-   encs.emplace_back(proto::rfbEncodingMonitorInfo);
-   encs.emplace_back(proto::rfbEncodingEnableKeepAlive);
 
    proto::rfbSetEncodingsMsg msg{};
    msg.pad = 0;
@@ -1197,7 +1188,7 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbFramebufferUpdate() {
       if(encoding == proto::rfbEncodingLastRect)
          break;
 
-      auto err = co_await codecs_.invoke(encoding, *stream_, UpdateRect.r, frame_, shared_from_this());
+      auto err = co_await codec_manager_.invoke(encoding, *stream_, UpdateRect.r, frame_, shared_from_this());
       if(err)
          co_return err;
    }

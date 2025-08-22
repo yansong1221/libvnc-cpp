@@ -36,11 +36,11 @@ void client::set_share_desktop(bool share) {
 }
 
 void client::set_compress_level(int level) {
-   impl_->compress_level_ = std::clamp(level, 0, 9);
+   impl_->codec_manager_.set_compress_level(level);
 }
 
 void client::set_quality_level(int level) {
-   impl_->quality_level_ = std::clamp(level, 0, 9);
+   impl_->codec_manager_.set_quality_level(level);
 }
 
 void client::set_notifiction_text(std::string_view text) {

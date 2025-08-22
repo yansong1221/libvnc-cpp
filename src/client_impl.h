@@ -143,8 +143,6 @@ class client_impl : public encoding::client_op {
       uint16_t port_ = 5900;
       bool share_desktop_ = true;
       bool use_ssl_ = false;
-      std::atomic_int compress_level_ = 3;
-      std::atomic_int quality_level_ = 9;
       std::string notifiction_text_;
 
       frame_buffer frame_;
@@ -157,7 +155,7 @@ class client_impl : public encoding::client_op {
       client_delegate_proxy handler_;
       supported_messages supported_messages_;
 
-      encoding::codec_manager codecs_;
+      encoding::codec_manager codec_manager_;
       using message_handler = std::function<boost::asio::awaitable<error>()>;
       std::map<uint8_t, message_handler> message_map_;
       std::map<uint8_t, message_handler> auth_message_map_;

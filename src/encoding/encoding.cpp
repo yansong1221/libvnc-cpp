@@ -89,18 +89,26 @@ std::vector<std::string> codec_manager::supported_frame_encodings() const {
    return encs;
 }
 
-boost::asio::awaitable<libvnc::error> codec_manager::invoke(proto::rfbEncoding code,
-                                                               vnc_stream_type& socket,
-                                                               const proto::rfbRectangle& rect,
-                                                               frame_buffer& frame,
-                                                               std::shared_ptr<client_op> op) {
-   auto iter = std::ranges::find_if(codecs_, [&](const auto& codec) { return codec->encoding_code() == code; });
-   if(iter == codecs_.end()) {
-      co_return error::make_error(custom_error::frame_error, fmt::format("Unsupported encoding: {}", (int)code));
-   }
-   const auto& codec = (*iter);
+boost::asio::awaitable<error> codec_manager::invoke(proto::rfbEncoding code,
+                                                    vnc_stream_type& socket,
+                                                    const proto::rfbRectangle& rect,
+                                                    frame_buffer& frame,
+                                                    std::shared_ptr<client_op> op) {
+   try {
+      auto iter = std::ranges::find_if(codecs_, [&](const auto& codec) { return codec->encoding_code() == code; });
+      if(iter == codecs_.end()) {
+         co_return error::make_error(custom_error::frame_error, fmt::format("Unsupported encoding: {}", (int)code));
+      }
+      const auto& codec = (*iter);
 
-   co_return co_await codec->decode(socket, rect, frame, op);
+      co_return co_await codec->decode(socket, rect, frame, op);
+   } catch(const std::exception& e) {
+      co_return error::make_error(custom_error::frame_error,
+                                  fmt::format("Uncaught exception code: {}, what: {}", int(code), e.what()));
+   } catch(...) {
+      co_return error::make_error(custom_error::frame_error,
+                                  fmt::format("Uncaught exception code: {}, Unknown error", int(code)));
+   }
 }
 
 std::vector<proto::rfbEncoding> codec_manager::get_apply_encodings(
@@ -115,7 +123,24 @@ std::vector<proto::rfbEncoding> codec_manager::get_apply_encodings(
          return iter != frame_encodings.end();
       }) |
       std::views::transform([](const auto& enc) { return enc->encoding_code(); }) | std::ranges::to<std::vector>();
+
+   apply_codecs.emplace_back(proto::rfbEncoding(compress_level_ + proto::rfbEncodingCompressLevel0));
+   apply_codecs.emplace_back(proto::rfbEncoding(quality_level_ + proto::rfbEncodingQualityLevel0));
+   apply_codecs.emplace_back(proto::rfbEncodingLastRect);
+#ifdef LIBVNC_HAVE_LIBZ
+   apply_codecs.emplace_back(proto::rfbEncodingExtendedClipboard);
+#endif
+   apply_codecs.emplace_back(proto::rfbEncodingMonitorInfo);
+   apply_codecs.emplace_back(proto::rfbEncodingEnableKeepAlive);
    return apply_codecs;
+}
+
+void codec_manager::set_compress_level(int level) {
+   compress_level_ = std::clamp(level, 0, 9);
+}
+
+void codec_manager::set_quality_level(int level) {
+   quality_level_ = std::clamp(level, 0, 9);
 }
 
 }  // namespace libvnc::encoding

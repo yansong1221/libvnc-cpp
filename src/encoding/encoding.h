@@ -72,6 +72,9 @@ class codec_manager {
 
       std::vector<proto::rfbEncoding> get_apply_encodings(const std::vector<std::string>& frame_encodings) const;
 
+      void set_compress_level(int level);
+      void set_quality_level(int level);
+
    private:
       template <typename T, typename... _Types>
          requires std::derived_from<T, encoding::codec>
@@ -82,6 +85,8 @@ class codec_manager {
 
    private:
       std::vector<codec_ptr> codecs_;
+      std::atomic_int compress_level_ = 3;
+      std::atomic_int quality_level_ = 9;
 };
 
 }  // namespace libvnc::encoding
