@@ -1184,17 +1184,17 @@ boost::asio::awaitable<libvnc::error> client_impl::AuthRSAAES(int keySize, bool 
          co_return error::make_error(custom_error::auth_error, "RSA key hash mismatch");
       }
 
+      const int secTypeRA2None = 0;
       const int secTypeRA2UserPass = 1;
       const int secTypeRA2Pass = 2;
 
       uint8_t subtype = 0;
       co_await boost::asio::async_read(*stream_, boost::asio::buffer(&subtype, sizeof(subtype)));
 
-      if(subtype != secTypeRA2UserPass && subtype != secTypeRA2Pass) {
-         co_return error::make_error(custom_error::auth_error, fmt::format("Invalid subtype ({})", subtype));
-      }
-
-      if(subtype == secTypeRA2Pass) {
+      if(subtype == secTypeRA2None) {
+         //No authentication needed
+         spdlog::info("RA2 authentication succeeded without password");
+      } else if(subtype == secTypeRA2Pass) {
          if(auto password = handler_.get_auth_password(); password) {
             uint8_t len = 0;
             co_await boost::asio::async_write(*stream_, boost::asio::buffer(&len, sizeof(len)));
