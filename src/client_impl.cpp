@@ -122,13 +122,15 @@ boost::asio::awaitable<libvnc::error> client_impl::co_run() {
 
    commit_status(client::status::connecting);
    if(error err = co_await async_connect_rfbserver(); err) {
+      spdlog::error("Failed to connect rfbserver [{}:{}] : {}", host_, port_, err.message());
       close();
       handler_.on_connect(err);
       co_return err;
    }
 
    commit_status(client::status::handshaking);
-   if(err = co_await async_handshake(); err) {
+   if(auto err = co_await async_handshake(); err) {
+      spdlog::error("Failed to handshake rfbserver [{}:{}] : {}", host_, port_, err.message());
       close();
       handler_.on_connect(err);
       co_return err;
@@ -136,17 +138,17 @@ boost::asio::awaitable<libvnc::error> client_impl::co_run() {
 
    commit_status(client::status::authenticating);
    if(auto err = co_await async_authenticate(); err) {
+      spdlog::error("Authentication with the server failed: {}", err.message());
       close();
       handler_.on_connect(err);
-      spdlog::error("Authentication with the server failed: {}", err.message());
       co_return err;
    }
 
    commit_status(client::status::initializing);
    if(auto err = co_await async_client_init(); err) {
+      spdlog::error("Failed to initialize the client: {}", err.message());
       close();
       handler_.on_connect(err);
-      spdlog::error("Failed to initialize the client: {}", err.message());
       co_return err;
    }
    commit_status(client::status::connected);
@@ -355,7 +357,6 @@ boost::asio::awaitable<error> client_impl::async_connect_rfbserver() {
          *stream_);
       co_return error{};
    } catch(const boost::system::system_error& e) {
-      spdlog::error("Failed to connect rfbserver [{}:{}] : {}", host_, port_, e.what());
       co_return error::make_error(e.code());
    } catch(const std::exception& e) {
       co_return error::make_error(custom_error::logic_error, fmt::format("Unhandled exception: {}", e.what()));
