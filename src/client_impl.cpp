@@ -52,51 +52,6 @@
 
 namespace libvnc {
 
-namespace detail {
-
-unsigned char fixedkey[8] = {23, 82, 107, 6, 35, 78, 88, 7};
-
-static void rfbEncryptBytes(uint8_t* challenge, const char* passwd) {
-   unsigned char key[8];
-   unsigned int i;
-
-   /* key is simply password padded with nulls */
-
-   for(i = 0; i < 8; i++) {
-      if(i < strlen(passwd)) {
-         key[i] = passwd[i];
-      } else {
-         key[i] = 0;
-      }
-   }
-
-   deskey(key, EN0);
-
-   for(i = 0; i < 16; i += 8) {
-      des(challenge + i, challenge + i);
-   }
-}
-
-/*
- *   marscha@2006
- *   Encrypt bytes[length] in memory using key.
- *   Key has to be 8 bytes, length a multiple of 8 bytes.
- */
-static void vncEncryptBytes2(unsigned char* where, const int length, unsigned char* key) {
-   int i, j;
-   deskey(key, EN0);
-   for(i = 0; i < 8; i++)
-      where[i] ^= key[i];
-   des(where, where);
-   for(i = 8; i < length; i += 8) {
-      for(j = 0; j < 8; j++)
-         where[i + j] ^= where[i + j - 8];
-      des(where + i, where + i);
-   }
-}
-
-}  // namespace detail
-
 client_impl::client_impl(const boost::asio::any_io_executor& executor) : strand_(executor), resolver_(executor) {
    register_message(proto::rfbFramebufferUpdate, &client_impl::on_rfbFramebufferUpdate, this);
    register_message(proto::rfbSetColourMapEntries, &client_impl::on_rfbSetColourMapEntries, this);
@@ -952,9 +907,9 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbVncAuth() {
    if(ec)
       co_return error::make_error(ec);
 
-   if(auto password = handler_.get_auth_password(); password)
-      detail::rfbEncryptBytes(challenge.data(), password->c_str());
-
+   if(auto password = handler_.get_auth_password(); password) {
+      des::encrypt_bytes_v1(password.value(), challenge);
+   }
    co_await boost::asio::async_write(*stream_, boost::asio::buffer(challenge), net_awaitable[ec]);
    if(ec)
       co_return error::make_error(ec);
@@ -989,19 +944,20 @@ boost::asio::awaitable<libvnc::error> client_impl::on_rfbUltraMSLogonII() {
 
       spdlog::info("After DH: g={}, m={}, i={}, key={}", gen.value(), mod.value(), pub.value(), key.value());
 
-      char user[256] = {0};
-      char passwd[64] = {0};
-
+      std::string user;
+      std::string passwd;
       if(auto result = handler_.get_auth_ms_account(); result) {
-         strncpy_s(passwd, result->second.c_str(), 64);
-         strncpy_s(user, result->first.c_str(), 254);
+         user = result->first;
+         passwd = result->second;
       }
+      user.resize(256);
+      passwd.resize(64);
 
-      detail::vncEncryptBytes2((unsigned char*)user, sizeof(user), key.data());
-      detail::vncEncryptBytes2((unsigned char*)passwd, sizeof(passwd), key.data());
+      des::encrypt_bytes_v2({key.data(), sizeof(key)}, {(uint8_t*)user.data(), user.size()});
+      des::encrypt_bytes_v2({key.data(), sizeof(key)}, {(uint8_t*)passwd.data(), passwd.size()});
 
-      co_await boost::asio::async_write(*stream_, boost::asio::buffer(&user, sizeof(user)));
-      co_await boost::asio::async_write(*stream_, boost::asio::buffer(&passwd, sizeof(passwd)));
+      co_await boost::asio::async_write(*stream_, boost::asio::buffer(user));
+      co_await boost::asio::async_write(*stream_, boost::asio::buffer(passwd));
 
       co_return co_await read_auth_result();
 
