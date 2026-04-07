@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
-
+#include <ranges>
 namespace libvnc::des {
 
 static std::vector<uint8_t> make_key(std::span<const uint8_t> key) {
