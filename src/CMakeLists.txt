@@ -8,29 +8,6 @@ find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(botan CONFIG REQUIRED)
 
-if(TARGET botan::botan-static AND DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
-    set(_BOTAN_TRIPLET_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
-    set(_BOTAN_RELEASE_LIB "${_BOTAN_TRIPLET_DIR}/lib/botan-3.lib")
-    set(_BOTAN_DEBUG_LIB "${_BOTAN_TRIPLET_DIR}/debug/lib/botan-3.lib")
-    set(_BOTAN_INCLUDE_DIR "${_BOTAN_TRIPLET_DIR}/include")
-
-    if(EXISTS "${_BOTAN_INCLUDE_DIR}")
-        set_target_properties(botan::botan-static PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_BOTAN_INCLUDE_DIR}")
-    endif()
-
-    if(EXISTS "${_BOTAN_RELEASE_LIB}")
-        set_target_properties(botan::botan-static PROPERTIES IMPORTED_LOCATION_RELEASE "${_BOTAN_RELEASE_LIB}")
-    endif()
-
-    if(EXISTS "${_BOTAN_DEBUG_LIB}")
-        set_target_properties(botan::botan-static PROPERTIES IMPORTED_LOCATION_DEBUG "${_BOTAN_DEBUG_LIB}")
-    endif()
-
-    if(EXISTS "${_BOTAN_RELEASE_LIB}")
-        set_target_properties(botan::botan-static PROPERTIES IMPORTED_LOCATION "${_BOTAN_RELEASE_LIB}")
-    endif()
-endif()
-
 include(FetchContent)
 FetchContent_Declare(ZStrGitRepo
   GIT_REPOSITORY    "https://github.com/mateidavid/zstr.git" # can also be a local filesystem path!
